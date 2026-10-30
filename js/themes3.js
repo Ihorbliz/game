@@ -713,7 +713,7 @@
       name: 'Бананова фабрика', icon: '🏭',
       sky: ['#7fb6c8', '#e6f2ef'],
       ground: { style: 'stone', body: '#6f7c88', dark: '#5d6873', top: '#ffcf33', topDark: '#3a3f45', texture: 'bricks' },
-      block: { fill: '#ff9800', light: '#ffc166', dark: '#c26a00' },
+      block: { fill: '#7f8c9a', light: '#b4c0cc', dark: '#4e5966' },
       oneway: { fill: '#90a4ae', dark: '#546e7a' },
       enemy: 'xGearBot', enemyColor: '#ff7043', flyer: 'xPropBot',
       decor: ['xGear', 'xCrate', 'xPipe', 'xCrate'],
