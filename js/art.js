@@ -252,7 +252,7 @@ const Art = {
     c.save();
     c.translate(e.x, e.y);
     const f = e.vx > 0 ? 1 : -1;
-    if (e.type === 'flyer') c.scale(e.face || 1, 1); else c.scale(-f, 1);
+    if (e.type === 'flyer') c.scale(e.face || 1, 1); else c.scale(f, 1);
     if (e.dead) {
       c.globalAlpha = Math.max(0, 1 - e.dead * 1.8);
       if (e.type === 'flyer') c.rotate(e.dead * 8);

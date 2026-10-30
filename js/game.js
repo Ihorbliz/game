@@ -800,7 +800,7 @@
     for (let x = -T; x < VW + T; x += T) {
       for (let ty = 11; ty < ROWS; ty++) ctx.drawImage(ty === 11 ? cache.tiles.top : cache.tiles.fill, x - off, ty * T, T + 0.6, T + 0.6);
     }
-    const mx = VW * 0.5 + 40;
+    const mx = VW * 0.86;
     Art.minion(ctx, mx, 11 * T, { t: G.menuT, facing: 1, state: 'run' });
     Art.squirrel(ctx, mx - 60, 11 * T, { t: G.menuT, facing: 1, moving: true });
     for (let i = 0; i < 3; i++) {
@@ -812,7 +812,7 @@
   }
 
   // ---------- Екрани ----------
-  const screens = ['menu', 'levels', 'pause', 'win', 'final'];
+  const screens = ['menu', 'levels', 'pause', 'win', 'final', 'install'];
   let isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 
   function setState(s) {
@@ -824,8 +824,9 @@
     $('touch').classList.toggle('hidden', !playing || !isTouch);
     $('kbdHint').classList.toggle('hidden', isTouch);
     if (!playing) clearInput();
+    document.body.classList.toggle('installing', s === 'install');
     if (s === 'menu' || s === 'levels') {
-      if (prev !== 'menu' && prev !== 'levels') {
+      if (prev !== 'menu' && prev !== 'levels' && prev !== 'install') {
         Sound.music(THEMES[menuTheme()].music);
         cache.key = '';
         initAmbient();
@@ -999,7 +1000,7 @@
     last = now;
     if (dt > 0.1) dt = 0.1;
     G.t += dt;
-    if (G.state === 'menu' || G.state === 'levels') {
+    if (G.state === 'menu' || G.state === 'levels' || G.state === 'install') {
       G.menuT += dt;
       renderMenu(dt);
       return;
@@ -1021,9 +1022,96 @@
     drawHUD();
   }
 
+  // ---------- Підказка «як встановити гру» ----------
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/i.test(ua);
+  const installed = () => navigator.standalone === true ||
+    matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches;
+  let installEvent = null;
+
+  function installSteps() {
+    const ios = [
+      'Відкрий гру в браузері <b>Safari</b> (поки є інтернет).',
+      'Натисни кнопку <b>«Поділитися»</b> <span class="ico">⬆︎</span> — квадратик зі стрілкою внизу або вгорі екрана.',
+      'Прокрути список і вибери <b>«На екран „Додому“»</b> <span class="ico">＋</span>.',
+      'Натисни <b>«Додати»</b>.',
+      'Готово! Запускай гру з іконки з Міньйоном — тепер і без інтернету.',
+    ];
+    const androidPrompt = [
+      'Натисни зелену кнопку <b>«Встановити»</b> нижче.',
+      'Підтверди <b>«Встановити»</b>.',
+      'Готово! Запускай гру з іконки з Міньйоном — тепер і без інтернету.',
+    ];
+    const android = [
+      'Відкрий гру в <b>Chrome</b> (поки є інтернет).',
+      'Натисни меню <span class="ico">⋮</span> у правому верхньому куті.',
+      'Вибери <b>«Додати на головний екран»</b> або <b>«Встановити застосунок»</b>.',
+      'Підтверди <b>«Встановити»</b> / <b>«Додати»</b>.',
+      'Готово! Запускай гру з іконки з Міньйоном — тепер і без інтернету.',
+    ];
+    const desktop = [
+      'На комп\'ютері можна грати просто тут, у браузері.',
+      'Щоб гра була іконкою: у Chrome чи Edge натисни значок <span class="ico">⊕</span> в адресному рядку або меню <span class="ico">⋮</span> → <b>«Встановити»</b>.',
+      'На телефоні відкрий це саме посилання — там буде своя підказка.',
+    ];
+    const list = isIOS ? ios : isAndroid ? (installEvent ? androidPrompt : android) : (installEvent ? androidPrompt : desktop);
+    $('instSteps').innerHTML = list.map(x => `<li>${x}</li>`).join('');
+    $('btnInstallNow').classList.toggle('hidden', !installEvent);
+  }
+
+  function updateInstallStatus() {
+    const el = $('instStatus');
+    if (installed()) { el.className = 'status ok'; el.textContent = '✅ Гру вже встановлено!'; return; }
+    if (!('serviceWorker' in navigator) || !location.protocol.startsWith('http') || !window.caches) { el.textContent = ''; return; }
+    el.className = 'status wait';
+    el.textContent = '⏳ Зберігаю гру для гри без інтернету…';
+    navigator.serviceWorker.ready
+      .then(() => caches.keys())
+      .then(keys => {
+        if (keys.length) { el.className = 'status ok'; el.textContent = '✅ Гру збережено — вона працюватиме без інтернету'; }
+      })
+      .catch(() => {});
+  }
+
+  function showInstall() {
+    installSteps();
+    updateInstallStatus();
+    setState('install');
+  }
+
+  addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    installEvent = e;
+    if (G.state === 'install') installSteps();
+  });
+  addEventListener('appinstalled', () => {
+    installEvent = null;
+    save.installSeen = true;
+    persist();
+    $('btnHowInstall').classList.add('hidden');
+    if (G.state === 'install') { installSteps(); updateInstallStatus(); }
+  });
+  on('btnInstallNow', () => {
+    if (!installEvent) return;
+    installEvent.prompt();
+    installEvent.userChoice.finally(() => { installEvent = null; installSteps(); updateInstallStatus(); });
+  });
+  on('btnInstallOk', () => {
+    save.installSeen = true;
+    persist();
+    setState('menu');
+  });
+  on('btnHowInstall', showInstall);
+
   resize();
   updateSoundButtons();
   setState('menu');
+  if (!installed()) {
+    $('btnHowInstall').classList.remove('hidden');
+    // на телефоні при першому відкритті одразу показуємо, як встановити
+    if (isTouch && !save.installSeen) showInstall();
+  }
   requestAnimationFrame(frame);
 
   // для автоматичних тестів

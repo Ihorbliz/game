@@ -111,6 +111,27 @@
   #rotate .phone { font-size: 22vw; animation: spin 2s ease-in-out infinite; }
   @keyframes spin { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
   @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
+  body.installing #rotate { display: none !important; }
+  button.small { font-size: calc(10px + 2vh); padding: 1vh 3vh; margin-top: -1vh; }
+
+  /* екран-підказка «як встановити»: має читатися і вертикально, і горизонтально */
+  #install { background: linear-gradient(#6ec6ff, #d6f2ff); z-index: 40; padding: 12px; overflow-y: auto; touch-action: pan-y; justify-content: safe center; }
+  #install .card {
+    background: #fff; border-radius: 22px; box-shadow: 0 8px 0 rgba(0,0,0,0.12);
+    width: min(680px, 100%); padding: clamp(12px, 3vmin, 26px); text-align: left;
+    font-size: clamp(15px, 2.4vmin + 6px, 21px); line-height: 1.35; color: #3b2a00;
+  }
+  #install h3 { margin: 0 0 6px; font-size: 1.35em; text-align: center; color: #c98a00; }
+  #install .lead { margin: 0 0 8px; text-align: center; }
+  #install ol { margin: 0 0 8px; padding-left: 1.5em; }
+  #install li { margin: 0.35em 0; }
+  #install .ico { display: inline-block; min-width: 1.6em; padding: 0 0.3em; border-radius: 6px; background: #eef4fb; text-align: center; font-weight: bold; }
+  #install .status { margin: 4px 0 10px; text-align: center; font-weight: bold; }
+  #install .status.ok { color: #2e7d32; }
+  #install .status.wait { color: #b26a00; }
+  #install button { font-size: clamp(15px, 2.4vmin + 8px, 24px); padding: 10px 22px; }
+  #install .row { gap: 12px; }
+  #btnInstallNow { background: #4caf50; color: #fff; box-shadow: 0 6px 0 #2e7d32; }
 </style>
 </head>
 <body>
@@ -132,6 +153,7 @@
     <button id="btnLevels" class="blue">🗺️ Рівні</button>
     <button class="round btnSound" aria-label="Звук">🔊</button>
   </div>
+  <button id="btnHowInstall" class="blue small hidden">📲 Як встановити гру на телефон</button>
   <p class="hint" id="kbdHint">Клавіатура: ← → — бігти, пробіл — стрибати, P — пауза</p>
 </div>
 
@@ -175,6 +197,19 @@
   <p class="sub">Міньйон і Руда Білка пройшли всі 40 світів!<br>Ти справжній герой!</p>
   <p id="finalInfo" class="sub"></p>
   <button id="btnFinalMenu" class="big">🏠 Меню</button>
+</div>
+
+<div id="install" class="screen hidden">
+  <div class="card">
+    <h3>📲 Встанови гру на телефон</h3>
+    <p class="lead">Тоді вона з'явиться іконкою на екрані й працюватиме <b>без інтернету</b>.</p>
+    <ol id="instSteps"></ol>
+    <p id="instStatus" class="status"></p>
+    <div class="row">
+      <button id="btnInstallNow" class="hidden">📲 Встановити</button>
+      <button id="btnInstallOk" class="blue">Зрозуміло, далі ▶</button>
+    </div>
+  </div>
 </div>
 
 <div id="rotate">

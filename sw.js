@@ -1,6 +1,6 @@
 'use strict';
 // Сервіс-воркер: зберігає гру в кеші, щоб вона працювала без інтернету.
-const CACHE = 'minion-game-v2';
+const CACHE = 'minion-game-v3';
 const FILES = [
   './',
   './index.html',
