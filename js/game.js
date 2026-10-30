@@ -684,7 +684,7 @@
     G.amb = [];
     const idx = G.state === 'menu' || G.state === 'levels' ? menuTheme() : G.L;
     const type = THEMES[idx] ? THEMES[idx].particles : 'none';
-    const n = { snow: 70, bubbles: 30, embers: 40, leaves: 14, fireflies: 22, sparkle: 26, dust: 20, twinkle: 30 }[type] || 0;
+    const n = { snow: 70, bubbles: 30, embers: 40, leaves: 14, petals: 24, fireflies: 22, sparkle: 26, dust: 20, twinkle: 30 }[type] || 0;
     for (let i = 0; i < n; i++) G.amb.push({ type, x: Math.random() * VW, y: Math.random() * VIEW_H, s: Math.random(), ph: Math.random() * 6 });
   }
 
@@ -699,7 +699,7 @@
         case 'snow': a.y += (25 + a.s * 35) * dt; a.x += Math.sin(t + a.ph) * 12 * dt; break;
         case 'bubbles': a.y -= (20 + a.s * 40) * dt; a.x += Math.sin(t * 2 + a.ph) * 15 * dt; break;
         case 'embers': a.y -= (30 + a.s * 50) * dt; a.x += Math.sin(t * 1.5 + a.ph) * 20 * dt; break;
-        case 'leaves': a.y += (20 + a.s * 25) * dt; a.x += Math.sin(t + a.ph) * 30 * dt; break;
+        case 'leaves': case 'petals': a.y += (20 + a.s * 25) * dt; a.x += Math.sin(t + a.ph) * 30 * dt; break;
         case 'dust': a.x -= (30 + a.s * 50) * dt; a.y += Math.sin(t + a.ph) * 6 * dt; break;
         case 'fireflies': a.x += Math.sin(t * 0.7 + a.ph) * 15 * dt; a.y += Math.cos(t * 0.9 + a.ph) * 12 * dt; break;
         default: break;
@@ -720,6 +720,10 @@
         case 'leaves':
           ctx.fillStyle = a.s > 0.5 ? '#f9a825' : '#7cb342';
           ctx.save(); ctx.translate(a.x, a.y); ctx.rotate(t * 2 + a.ph); ell(ctx, 0, 0, 5, 2.5); ctx.restore();
+          break;
+        case 'petals':
+          ctx.fillStyle = a.s > 0.6 ? '#ffffff' : '#ffb7d5';
+          ctx.save(); ctx.translate(a.x, a.y); ctx.rotate(t * 1.5 + a.ph); ell(ctx, 0, 0, 4, 2.2); ctx.restore();
           break;
         case 'dust': ctx.fillStyle = 'rgba(255,240,200,0.45)'; circ(ctx, a.x, a.y, 1 + a.s * 2); break;
         case 'fireflies': ctx.fillStyle = `rgba(230,255,120,${0.2 + tw * 0.8})`; circ(ctx, a.x, a.y, 1.5 + a.s * 1.5); break;

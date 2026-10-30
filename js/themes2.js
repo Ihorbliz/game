@@ -653,7 +653,7 @@
       name: 'Весела ферма', icon: '🚜',
       sky: ['#74c4ff', '#e8f8ff'],
       ground: { style: 'grass', body: '#a0703f', dark: '#845a30', top: '#7ed957', topDark: '#4fae3a' },
-      block: { fill: '#e8c35a', light: '#fbe39a', dark: '#b28a2e' },
+      block: { fill: '#b5643c', light: '#d98c62', dark: '#7a3d20', bricks: true },
       oneway: { fill: '#d39459', dark: '#9a6634' },
       enemy: 'piglet', enemyColor: '#ffa8bb', flyer: 'butterfly',
       decor: ['hayBale', 'sunflower', 'chicken', 'fence', 'flower2'],
@@ -780,7 +780,7 @@
       oneway: { fill: '#fff4f8', dark: '#d9a7bd' },
       enemy: 'snail', enemyColor: '#ffa94d', flyer: 'butterfly',
       decor: ['blossomBush', 'tulip', 'flower', 'birdhouse', 'flower2'],
-      particles: 'leaves', gravity: 1,
+      particles: 'petals', gravity: 1,
       music: { bpm: 112, root: 65, minor: false, lead: 'triangle', bass: 'sine', drums: true, rest: 0.3, seed: 20, bell: true },
       skyDraw(c, w, h) { sun(c, w * 0.2, 70, 26, '#fffde7', 'rgba(255,240,245,0.6)'); },
       far(c, w, h, r) {

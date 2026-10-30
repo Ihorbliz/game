@@ -597,7 +597,7 @@ const THEMES = [
     name: 'Небесне королівство', icon: '☁️',
     sky: ['#7ec3ff', '#ffe0ef'],
     ground: { style: 'cloud', body: '#e9efff', dark: '#d6e0fa', top: '#ffffff', topDark: '#e9efff', texture: 'puffs' },
-    block: { fill: '#ffd54f', light: '#fff1a8', dark: '#e0a800' },
+    block: { fill: '#a9c8ff', light: '#dce8ff', dark: '#6f8fd6' },
     oneway: { fill: '#ffffff', dark: '#c9d6f2', style: 'cloud' },
     enemy: 'alien', enemyColor: '#80deea', flyer: 'bird',
     decor: ['cloudPuff', 'rainbowFlower', 'cloudPuff'],
