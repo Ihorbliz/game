@@ -1109,8 +1109,8 @@
   setState('menu');
   if (!installed()) {
     $('btnHowInstall').classList.remove('hidden');
-    // на телефоні при першому відкритті одразу показуємо, як встановити
-    if (isTouch && !save.installSeen) showInstall();
+    // відкрили за посиланням у браузері (не з іконки) — одразу показуємо, як встановити
+    showInstall();
   }
   requestAnimationFrame(frame);
 
