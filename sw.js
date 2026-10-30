@@ -1,12 +1,14 @@
 'use strict';
 // Сервіс-воркер: зберігає гру в кеші, щоб вона працювала без інтернету.
-const CACHE = 'minion-game-v1';
+const CACHE = 'minion-game-v2';
 const FILES = [
   './',
   './index.html',
   './js/audio.js',
   './js/art.js',
   './js/themes.js',
+  './js/themes2.js',
+  './js/themes3.js',
   './js/levels.js',
   './js/game.js',
   './manifest.webmanifest',
@@ -19,7 +21,8 @@ const FILES = [
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE)
-      .then((cache) => cache.addAll(FILES))
+      // cache: 'reload' — беремо свіжі файли з мережі, а не зі старого кешу браузера
+      .then((cache) => cache.addAll(FILES.map((f) => new Request(f, { cache: 'reload' }))))
       .then(() => self.skipWaiting())
   );
 });

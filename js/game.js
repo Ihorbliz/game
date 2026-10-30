@@ -15,11 +15,16 @@
 
   // ---------- Збереження прогресу ----------
   const SAVE_KEY = 'minion-squirrel-v1';
-  const save = { unlocked: 1, stars: Array(15).fill(0), muted: false };
+  const NUM = THEMES.length; // скільки всього рівнів
+  const save = { unlocked: 1, stars: Array(NUM).fill(0), muted: false };
   try {
     const s = JSON.parse(localStorage.getItem(SAVE_KEY));
     if (s) Object.assign(save, s);
   } catch (e) { /* немає сховища — граємо без збереження */ }
+  // старе збереження (було 15 рівнів): дописуємо нові та відкриваємо наступний після пройденого
+  while (save.stars.length < NUM) save.stars.push(0);
+  for (let i = 0; i < NUM - 1; i++) if (save.stars[i] > 0) save.unlocked = Math.max(save.unlocked, i + 2);
+  save.unlocked = Math.min(NUM, save.unlocked);
   const persist = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* ignore */ } };
   Sound.setMuted(save.muted);
 
@@ -85,6 +90,7 @@
     G.cp = null;
     G.parts = [];
     G.bumps = [];
+    G.crumbles = new Map();
     G.win = 0;
     G.banner = 2.8;
     G.toast = null;
@@ -111,7 +117,7 @@
     if (ty < 0 || ty >= ROWS) return 0;
     return lv.grid[ty][tx];
   }
-  const solid = t => t >= 1 && t <= 4;
+  const solid = t => (t >= 1 && t <= 4) || t === 7;
 
   function moveX(b, dx) {
     b.x += dx;
@@ -195,12 +201,24 @@
     G.shake = Math.max(0, G.shake - dt);
 
     for (const m of lv.movers) {
-      const old = m.x;
-      m.x += m.dir * m.speed * dt;
-      if (m.x >= m.x1) { m.x = m.x1; m.dir = -1; }
-      if (m.x <= m.x0) { m.x = m.x0; m.dir = 1; }
-      m.dx = m.x - old;
+      m.dx = 0;
+      m.dy = 0;
+      if (m.wait > 0) { m.wait -= dt; continue; } // коротка зупинка на краях
+      if (m.axis === 'y') {
+        const old = m.y;
+        m.y += m.dir * m.speed * dt;
+        if (m.y >= m.y1) { m.y = m.y1; m.dir = -1; m.wait = 0.7; }
+        if (m.y <= m.y0) { m.y = m.y0; m.dir = 1; m.wait = 0.7; }
+        m.dy = m.y - old;
+      } else {
+        const old = m.x;
+        m.x += m.dir * m.speed * dt;
+        if (m.x >= m.x1) { m.x = m.x1; m.dir = -1; m.wait = 0.3; }
+        if (m.x <= m.x0) { m.x = m.x0; m.dir = 1; m.wait = 0.3; }
+        m.dx = m.x - old;
+      }
     }
+    updateCrumbles(dt);
     for (const s of lv.springs) s.comp = Math.max(0, s.comp - dt * 4);
     for (const b of G.bumps) b.t -= dt;
     G.bumps = G.bumps.filter(b => b.t > 0);
@@ -263,7 +281,7 @@
     if (G.win > 0.6 && p.onGround && Math.random() < dt * 2) p.vy = -420 * Math.sqrt(th.gravity);
 
     p.vy = Math.min(p.vy + g * dt, MAXFALL * (th.fallMul || 1));
-    if (p.onMover) p.x += p.onMover.dx;
+    if (p.onMover) { p.x += p.onMover.dx; p.y += p.onMover.dy || 0; }
     const prevBot = p.y, wasGround = p.onGround, landV = p.vy;
     moveX(p, p.vx * dt);
     const bonk = moveY(p, p.vy * dt, prevBot);
@@ -271,7 +289,7 @@
     p.onMover = null;
     if (p.vy >= 0) {
       for (const m of lv.movers) {
-        if (p.x + p.w / 2 > m.x + 2 && p.x - p.w / 2 < m.x + m.w - 2 && prevBot <= m.y + 1 && p.y >= m.y) {
+        if (p.x + p.w / 2 > m.x + 2 && p.x - p.w / 2 < m.x + m.w - 2 && prevBot <= m.y + 1 + Math.abs(m.dy || 0) && p.y >= m.y) {
           p.y = m.y; p.vy = 0; p.onGround = true; p.onMover = m;
         }
       }
@@ -296,6 +314,29 @@
     if (bonk) hitTile(bonk.tx, bonk.ty);
 
     if (p.y > ROWS * T + 90) { fellInPit(); return; }
+
+    // плити, що обвалюються
+    if (p.onGround && !p.onMover) {
+      const ty = Math.floor(p.y / T + 0.01);
+      for (let tx = Math.floor((p.x - p.w / 2 + 0.5) / T); tx <= Math.floor((p.x + p.w / 2 - 0.5) / T); tx++) {
+        const k = tx + ',' + ty;
+        if (tile(tx, ty) === 7 && !G.crumbles.has(k)) G.crumbles.set(k, { tx, ty, t: 0.45, gone: 0 });
+      }
+    }
+    // шипи
+    {
+      const l = Math.floor((p.x - p.w / 2) / T), r = Math.floor((p.x + p.w / 2) / T);
+      const t0 = Math.floor((p.y - p.h) / T), t1 = Math.floor((p.y - 0.5) / T);
+      for (let ty = t0; ty <= t1; ty++) for (let tx = l; tx <= r; tx++) {
+        if (tile(tx, ty) !== 6) continue;
+        const sx0 = tx * T + 4, sx1 = tx * T + T - 4, sy0 = ty * T + 15;
+        if (p.x + p.w / 2 > sx0 && p.x - p.w / 2 < sx1 && p.y > sy0) {
+          hurt(p.x + p.facing * 10);
+          if (p.vy >= 0) p.vy = -560 * Math.sqrt(th.gravity);
+          p.onGround = false;
+        }
+      }
+    }
 
     p.inv = Math.max(0, p.inv - dt);
     p.anim += dt;
@@ -341,6 +382,28 @@
     }
   }
 
+  function updateCrumbles(dt) {
+    const lv = G.lv, p = G.p;
+    for (const [k, c] of G.crumbles) {
+      if (!c.gone) {
+        c.t -= dt;
+        if (c.t <= 0) {
+          lv.grid[c.ty][c.tx] = 0;
+          c.gone = 4;
+          Sound.play('bump');
+          part({ x: c.tx * T + T / 2, y: c.ty * T + T / 2, vy: 40, g: 1400, life: 1.2, max: 1.2, type: 'tile', vr: (Math.random() - 0.5) * 3 });
+        }
+      } else {
+        c.gone -= dt;
+        const over = p.x + p.w / 2 > c.tx * T && p.x - p.w / 2 < (c.tx + 1) * T && p.y > c.ty * T && p.y - p.h < (c.ty + 1) * T;
+        if (c.gone <= 0 && !over) {
+          lv.grid[c.ty][c.tx] = 7;
+          G.crumbles.delete(k);
+        }
+      }
+    }
+  }
+
   function hitTile(tx, ty) {
     const lv = G.lv, t = lv.grid[ty][tx];
     if (t === 3) {
@@ -380,11 +443,17 @@
         if (e.onGround) {
           const fx = e.x + Math.sign(e.vx) * (e.w / 2 + 2);
           const below = tile(Math.floor(fx / T), Math.floor((e.y + 2) / T));
-          if (!solid(below) && below !== 5) e.vx = -e.vx;
+          const front = tile(Math.floor(fx / T), Math.floor((e.y - 1) / T));
+          if ((!solid(below) && below !== 5) || front === 6) e.vx = -e.vx;
+          // стрибунці час від часу підскакують
+          if (e.hop) {
+            e.hopT = (e.hopT || 1) - dt;
+            if (e.hopT <= 0) { e.vy = -480 * Math.sqrt(th.gravity); e.hopT = 1.3 + Math.random(); }
+          }
         }
         if (e.y > ROWS * T + 60) e.dead = 1;
       } else {
-        e.t += dt;
+        e.t += dt * (e.spd || 1);
         const nx = e.baseX + Math.sin(e.t * 0.8) * T * 1.5;
         e.face = nx >= e.x ? 1 : -1;
         e.x = nx;
@@ -480,14 +549,14 @@
     const stars = 1 + (ratio >= 0.5 ? 1 : 0) + (ratio >= 0.85 ? 1 : 0);
     G.winStars = stars;
     save.stars[G.L] = Math.max(save.stars[G.L] || 0, stars);
-    save.unlocked = Math.max(save.unlocked, Math.min(15, G.L + 2));
+    save.unlocked = Math.max(save.unlocked, Math.min(NUM, G.L + 2));
     persist();
   }
 
   function showWin() {
-    if (G.L === 14) {
+    if (G.L === NUM - 1) {
       const total = save.stars.reduce((a, b) => a + b, 0);
-      $('finalInfo').textContent = `Зірочок зібрано: ${total} з 45 ⭐`;
+      $('finalInfo').textContent = `Зірочок зібрано: ${total} з ${NUM * 3} ⭐`;
       setState('final');
       for (let i = 0; i < 4; i++) setTimeout(() => Sound.play('win'), i * 1300);
       return;
@@ -521,11 +590,16 @@
         const t = row[tx];
         if (!t) continue;
         let img;
+        let ox = 0, oy = 0;
         if (t === 1) img = (ty > 0 && lv.grid[ty - 1][tx] === 1) ? tl.fill : tl.top;
-        else img = t === 2 ? tl.block : t === 3 ? tl.box : t === 4 ? tl.used : tl.oneway;
-        let oy = 0;
+        else if (t === 6) img = tl.spike;
+        else if (t === 7) {
+          img = tl.crumble;
+          const cr = G.crumbles.get(tx + ',' + ty);
+          if (cr && !cr.gone) { ox = (Math.random() - 0.5) * 3; oy = (Math.random() - 0.5) * 2; }
+        } else img = t === 2 ? tl.block : t === 3 ? tl.box : t === 4 ? tl.used : tl.oneway;
         if (t >= 2 && t <= 4) for (const b of G.bumps) if (b.tx === tx && b.ty === ty) oy = -Math.sin((1 - b.t / 0.18) * Math.PI) * 8;
-        ctx.drawImage(img, tx * T, ty * T + oy, T + 0.6, T + 0.6);
+        ctx.drawImage(img, tx * T + ox, ty * T + oy, T + 0.6, T + 0.6);
       }
     }
   }
@@ -542,6 +616,8 @@
         ctx.save(); ctx.translate(q.x, q.y); ctx.rotate(q.rot); ctx.fillRect(-q.size / 2, -q.size / 4, q.size, q.size / 2); ctx.restore();
       } else if (q.type === 'banana') {
         Art.banana(ctx, q.x, q.y, 0, 1);
+      } else if (q.type === 'tile') {
+        ctx.save(); ctx.translate(q.x, q.y); ctx.rotate(q.rot); ctx.drawImage(cache.tiles.crumble, -T / 2, -T / 2, T, T); ctx.restore();
       } else if (q.type === 'heart') {
         Art.heart(ctx, q.x, q.y, 1.2);
       } else {
@@ -574,7 +650,17 @@
     for (const k of lv.checkpoints) if (vis(k.x)) Art.checkpoint(ctx, k.x, k.y, k.active, t);
     if (vis(lv.goal.x)) Art.goal(ctx, lv.goal.x, lv.goal.y, t);
     drawTiles(cam);
-    for (const m of lv.movers) if (vis(m.x) || vis(m.x + m.w)) Art.mover(ctx, m, th);
+    for (const m of lv.movers) {
+      if (!vis(m.x) && !vis(m.x + m.w)) continue;
+      if (m.axis === 'y') {
+        // трос ліфта
+        ctx.strokeStyle = 'rgba(60,60,70,0.7)';
+        ctx.lineWidth = 2;
+        line(ctx, m.x + 10, 0, m.x + 10, m.y);
+        line(ctx, m.x + m.w - 10, 0, m.x + m.w - 10, m.y);
+      }
+      Art.mover(ctx, m, th);
+    }
     for (const s of lv.springs) if (vis(s.x)) Art.spring(ctx, s.x, s.y, s.comp);
     for (const b of lv.bananas) if (!b.got && vis(b.x)) Art.banana(ctx, b.x, b.y, t + b.x * 0.01);
     for (const h of lv.hearts) if (!h.got && vis(h.x)) Art.heart(ctx, h.x, h.y + Math.sin(t * 3) * 2, 1.1 + Math.sin(t * 6) * 0.06);
@@ -697,7 +783,7 @@
   }
 
   // ---------- Меню: персонажі біжать на тлі світу ----------
-  function menuTheme() { return Math.min(14, save.unlocked - 1); }
+  function menuTheme() { return Math.min(NUM - 1, save.unlocked - 1); }
 
   function renderMenu(dt) {
     const idx = menuTheme();
@@ -745,10 +831,20 @@
     if (s === 'play' && prev === 'pause') Sound.resumeMusic();
   }
 
-  function buildLevelGrid() {
+  const PER_PAGE = 10;
+  let levelPage = -1;
+  function buildLevelGrid(page) {
+    const pages = Math.ceil(NUM / PER_PAGE);
+    if (page == null) page = levelPage < 0 ? Math.floor(menuTheme() / PER_PAGE) : levelPage;
+    levelPage = clamp(page, 0, pages - 1);
+    const from = levelPage * PER_PAGE, to = Math.min(NUM, from + PER_PAGE);
+    $('pageInfo').textContent = `${from + 1}–${to}`;
+    $('btnPrevPage').style.visibility = levelPage > 0 ? 'visible' : 'hidden';
+    $('btnNextPage').style.visibility = levelPage < pages - 1 ? 'visible' : 'hidden';
     const grid = $('levelGrid');
     grid.innerHTML = '';
     THEMES.forEach((th, i) => {
+      if (i < from || i >= to) return;
       const locked = i + 1 > save.unlocked;
       const b = document.createElement('button');
       b.className = 'lvl' + (locked ? ' locked' : '');
@@ -793,11 +889,13 @@
   on('btnPlay', () => { goFullscreen(); startLevel(menuTheme()); });
   on('btnLevels', () => { buildLevelGrid(); setState('levels'); });
   on('btnBack', () => setState('menu'));
+  on('btnPrevPage', () => buildLevelGrid(levelPage - 1));
+  on('btnNextPage', () => buildLevelGrid(levelPage + 1));
   on('btnPause', togglePause);
   on('btnResume', togglePause);
   on('btnRestart', () => startLevel(G.L));
   on('btnToMenu', () => { Sound.stopMusic(); setState('menu'); });
-  on('btnNext', () => startLevel(Math.min(14, G.L + 1)));
+  on('btnNext', () => startLevel(Math.min(NUM - 1, G.L + 1)));
   on('btnReplay', () => startLevel(G.L));
   on('btnWinMenu', () => setState('menu'));
   on('btnFinalMenu', () => setState('menu'));
@@ -816,7 +914,7 @@
     titleTimer = setTimeout(() => { titleTaps = 0; }, 1500);
     if (titleTaps >= 5) {
       titleTaps = 0;
-      save.unlocked = 15;
+      save.unlocked = NUM;
       persist();
       Sound.init();
       Sound.play('checkpoint');

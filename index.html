@@ -63,6 +63,9 @@
     display: grid; grid-template-columns: repeat(5, 1fr); gap: 2vh 1.6vw;
     width: min(96vw, 150vh);
   }
+  #levels { gap: 1.6vh; }
+  #levels .round { width: calc(24px + 7vh); height: calc(24px + 7vh); font-size: calc(10px + 3vh); }
+  .lvl { min-height: 24vh; }
   .lvl {
     position: relative; border-radius: 2.5vh; padding: 1.2vh 0.5vh; min-height: 19vh;
     background: #fff; color: #4a3200; box-shadow: 0 0.8vh 0 rgba(0,0,0,0.25);
@@ -122,7 +125,7 @@
 
 <div id="menu" class="screen">
   <h1 id="title">Міньйон <span>і</span> Руда Білка</h1>
-  <p class="sub">Бананова пригода у 15 світах</p>
+  <p class="sub">Бананова пригода у 40 світах</p>
   <div class="gap"></div>
   <div class="row" id="menuBtns">
     <button id="btnPlay" class="big">▶ Грати</button>
@@ -133,7 +136,11 @@
 </div>
 
 <div id="levels" class="screen dim hidden">
-  <h2>Обери світ</h2>
+  <div class="row">
+    <button id="btnPrevPage" class="round blue" aria-label="Назад">◀</button>
+    <h2>Світи <span id="pageInfo"></span></h2>
+    <button id="btnNextPage" class="round blue" aria-label="Далі">▶</button>
+  </div>
   <div id="levelGrid"></div>
   <button id="btnBack" class="blue">← Назад</button>
 </div>
@@ -165,7 +172,7 @@
 
 <div id="final" class="screen dim hidden">
   <h1>ПЕРЕМОГА! 🏆</h1>
-  <p class="sub">Міньйон і Руда Білка пройшли всі 15 світів!<br>Ти справжній герой!</p>
+  <p class="sub">Міньйон і Руда Білка пройшли всі 40 світів!<br>Ти справжній герой!</p>
   <p id="finalInfo" class="sub"></p>
   <button id="btnFinalMenu" class="big">🏠 Меню</button>
 </div>
@@ -178,6 +185,8 @@
 <script src="js/audio.js"></script>
 <script src="js/art.js"></script>
 <script src="js/themes.js"></script>
+<script src="js/themes2.js"></script>
+<script src="js/themes3.js"></script>
 <script src="js/levels.js"></script>
 <script src="js/game.js"></script>
 <script>

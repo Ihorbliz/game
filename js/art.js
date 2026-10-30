@@ -1028,6 +1028,34 @@ const Art = {
         c.fillStyle = '#6e4526';
         circ(c, 5, 5, 1.4); circ(c, T - 5, 5, 1.4); circ(c, 5, T - 7, 1.4); circ(c, T - 5, T - 7, 1.4);
       }),
+      spike: mk(c => {
+        // шипи: стоять на землі в нижній частині клітинки
+        c.fillStyle = '#5f6670';
+        c.fillRect(1, T - 5, T - 2, 5);
+        for (let i = 0; i < 4; i++) {
+          const x = 1 + i * 7.5;
+          const g = c.createLinearGradient(x, 0, x + 7.5, 0);
+          g.addColorStop(0, '#f1f3f5');
+          g.addColorStop(1, '#9aa3ad');
+          c.fillStyle = g;
+          tri(c, x, T - 4, x + 3.75, T - 19, x + 7.5, T - 4);
+        }
+        c.fillStyle = '#e53935';
+        for (let i = 0; i < 4; i++) circ(c, 1 + i * 7.5 + 3.75, T - 18, 1.1);
+      }),
+      crumble: mk(c => {
+        bevel(c, Art.shade(b.fill, -10), b.light, b.dark);
+        c.strokeStyle = b.dark;
+        c.lineWidth = 1.6;
+        c.beginPath();
+        c.moveTo(4, 9); c.lineTo(12, 15); c.lineTo(9, 24);
+        c.moveTo(12, 15); c.lineTo(21, 12); c.lineTo(27, 19);
+        c.moveTo(21, 12); c.lineTo(19, 4);
+        c.moveTo(15, 28); c.lineTo(18, 21); c.lineTo(25, 26);
+        c.stroke();
+        c.fillStyle = 'rgba(0,0,0,0.18)';
+        c.fillRect(2, T - 6, T - 4, 3);
+      }),
       oneway: mk(c => {
         const o = th.oneway;
         if (o.style === 'cloud') {
