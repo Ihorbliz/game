@@ -925,5 +925,5 @@
   requestAnimationFrame(frame);
 
   // для автоматичних тестів
-  window.__game = { G, input, startLevel, setState, save };
+  window.__game = { G, input, startLevel, setState, save, update, tile };
 })();
