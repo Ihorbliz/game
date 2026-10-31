@@ -1725,6 +1725,7 @@
             c.fillStyle = pick(hc, r()); c.beginPath(); c.arc(x, by - 1, 4.6, Math.PI, 0); c.fill();
           }
         }
+        c.fillStyle = 'rgba(50,6,22,0.5)'; c.fillRect(0, 236, w, 104);
         c.fillStyle = '#ffd23f'; c.fillRect(0, 340, w, 4);
         for (let x = 32; x < w; x += 128) wrap(w, x, 10, X => { c.fillStyle = '#c9a24a'; c.fillRect(X - 4, 0, 8, 344); c.fillStyle = '#fff0b0'; c.fillRect(X - 2, 0, 2, 344); });
       },
@@ -1835,16 +1836,16 @@
             c.fillStyle = '#8a4e22'; c.fillRect(X - R, 200, R * 2, 6); c.fillRect(X - R, 280, R * 2, 6);
             c.fillStyle = '#fff6e8'; circ(c, X + R * 0.4, 240, 14); c.strokeStyle = '#8a4e22'; c.lineWidth = 2; line(c, X + R * 0.4, 240, X + R * 0.4 + 8, 234);
             c.fillStyle = '#6d3f22'; ell(c, X, 172, R * 0.9, 12);
+            // кран і струмінь шоколаду в річку
+            c.fillStyle = '#9aa7b4'; c.fillRect(X + R - 4, 286, 22, 8); c.fillRect(X + R + 10, 286, 8, 14);
+            c.fillStyle = '#e53935'; c.fillRect(X + R + 4, 280, 4, 6);
+            c.fillStyle = '#5d3016'; c.beginPath(); c.moveTo(X + R + 11, 300); c.quadraticCurveTo(X + R + 8, 312, X + R + 10, 326); c.lineTo(X + R + 20, 326); c.quadraticCurveTo(X + R + 19, 312, X + R + 17, 300); c.fill();
+            c.fillStyle = '#7b4a2e'; ell(c, X + R + 15, 326, 12, 4);
             c.fillStyle = '#9a6a4a'; c.fillRect(X - 6, 60, 12, 112);
             c.fillStyle = '#c98a5a'; c.fillRect(X - 10, 60, 20, 8);
           });
         }
         // шоколадна річка з водоспадом
-        wrap(w, w * 0.75, 40, X => {
-          c.fillStyle = '#9a6a4a'; rr(c, X - 30, 120, 60, 18, 6); c.fill();
-          c.fillStyle = '#6d3f22'; c.fillRect(X - 18, 136, 36, 190);
-          c.strokeStyle = 'rgba(255,220,190,0.35)'; c.lineWidth = 2; for (let i = 0; i < 4; i++) line(c, X - 12 + i * 8, 140 + i * 9, X - 12 + i * 8, 300 - i * 12);
-        });
         c.fillStyle = '#6d3f22'; c.fillRect(0, 322, w, h - 322);
         c.fillStyle = '#8a5434'; for (let x = 0; x < w; x += 64) { c.beginPath(); c.ellipse(x + 32, 330, 26, 3, 0, 0, TAU); c.fill(); }
       },
@@ -1866,8 +1867,12 @@
         for (const x of spread(w, 3, r, 0.5)) wrap(w, x, 60, X => {
           c.fillStyle = '#ff9ec0'; rr(c, X - 46, 250, 92, 100, 14); c.fill();
           c.fillStyle = '#ffd1e2'; c.fillRect(X - 40, 258, 80, 6);
-          c.fillStyle = '#fff'; circ(c, X - 20, 290, 12); circ(c, X + 20, 290, 12);
-          c.fillStyle = '#e53935'; circ(c, X - 20, 290, 4); c.fillStyle = '#43a047'; circ(c, X + 20, 290, 4);
+          c.fillStyle = '#5d3016'; rr(c, X - 36, 272, 72, 26, 6); c.fill();
+          const bc = ['#ff4f8b', '#7b4a2e', '#fff3f6', '#4e2a14', '#ffb6d0'];
+          for (let i = 0; i < 5; i++) { c.fillStyle = bc[i]; circ(c, X - 26 + i * 13, 286, 5); }
+          c.fillStyle = 'rgba(255,255,255,0.35)'; c.fillRect(X - 34, 274, 68, 4);
+          c.fillStyle = '#fff'; circ(c, X - 30, 308, 6); circ(c, X + 30, 308, 6);
+          c.strokeStyle = '#c62828'; c.lineWidth = 1.5; line(c, X - 30, 308, X - 27, 304); line(c, X + 30, 308, X + 34, 307);
           c.fillStyle = '#c96a8a'; c.fillRect(X - 46, 320, 92, 6);
           c.strokeStyle = '#b0bec5'; c.lineWidth = 3; line(c, X, 250, X, 210);
           c.lineWidth = 2; for (const d of [-1, 0, 1]) { c.beginPath(); c.moveTo(X, 212); c.quadraticCurveTo(X + d * 16, 194, X, 176); c.stroke(); }
@@ -1894,14 +1899,18 @@
       music: { bpm: 112, root: 58, minor: false, lead: 'triangle', bass: 'triangle', drums: true, rest: 0.3, seed: 70 },
       skyDraw(c, w, h) {
         stars(c, w, h, 30, mulberry32(70), h * 0.18);
-        sun(c, w * 0.62, 300, 54, '#ffe28a', 'rgba(255,170,90,0.55)');
+        const hg = c.createLinearGradient(0, h * 0.35, 0, h * 0.8);
+        hg.addColorStop(0, 'rgba(255,140,90,0)'); hg.addColorStop(1, 'rgba(255,120,80,0.55)');
+        c.fillStyle = hg; c.fillRect(0, 0, w, h);
+        sun(c, w * 0.62, 236, 50, '#ffe28a', 'rgba(255,170,90,0.6)');
+        c.fillStyle = 'rgba(255,120,110,0.5)'; for (let i = 0; i < 3; i++) c.fillRect(w * 0.62 - 60, 236 + 14 + i * 12, 120, 3 + i);
         c.fillStyle = 'rgba(255,130,150,0.55)';
         for (const [x, y, l] of [[0.1, 120, 220], [0.45, 90, 300], [0.72, 150, 260], [0.3, 190, 180]]) { rr(c, w * x, y, l, 9, 4.5); c.fill(); rr(c, w * x + 40, y + 14, l * 0.6, 7, 3.5); c.fill(); }
       },
       far(c, w, h, r) {
         let x = 0;
         while (x < w) {
-          const bw = Math.min(30 + r() * 46, w - x), bh = 90 + r() * 150;
+          const bw = Math.min(30 + r() * 46, w - x), bh = 50 + r() * 100;
           c.fillStyle = r() < 0.5 ? '#6a3f7e' : '#5e3a76';
           c.fillRect(x, 330 - bh, bw, bh);
           for (let wy = 330 - bh + 10; wy < 320; wy += 12) for (let wx = x + 5; wx < x + bw - 6; wx += 9) if (r() < 0.22) { c.fillStyle = '#ffd88a'; c.fillRect(wx, wy, 4, 5); }
@@ -2034,7 +2043,7 @@
         bulbs(c, w, 18, 44, 256, ['#ff4081', '#ffd23f', '#40c4ff', '#69f0ae', '#ff6e40'], 18, 3.6);
         const wv = [[3, 10, 0], [5, 5, 2]];
         band(c, w, h, 356, wv, '#f4f8ff');
-        onBand(c, w, 356, wv, 6, r, 60, (x, y, k) => dec(c, 'mXmasTree', x, y + 8, 4 + k * 2, k * 20));
+        onBand(c, w, 356, wv, 6, r, 50, (x, y, k) => dec(c, 'mXmasTree', x, y + 8, 3 + k * 1.4, k * 20));
         onBand(c, w, 356, wv, 5, r, 30, (x, y, k) => dec(c, k < 0.6 ? 'mGiftPile' : 'mSnowBank', x, y + 6, 2));
         c.fillStyle = '#ffffff'; for (const x of spread(w, 40, r)) wrap(w, x, 4, X => circ(c, X, bandY(w, 356, wv, X) + 3, 2.2));
       },
@@ -2218,7 +2227,7 @@
       ground: { style: 'jungle', body: '#8a8576', dark: '#6f6a5c', top: '#3fa63e', topDark: '#2a7a2c', texture: 'bricks' },
       block: { fill: '#9a9886', light: '#c4c2ae', dark: '#66644f', bricks: true },
       oneway: { fill: '#7a6a4a', dark: '#4e4228' },
-      enemy: 'mStoneIdol', enemyColor: '#8f9a86', flyer: 'mFireflyLantern',
+      enemy: 'mStoneIdol', enemyColor: '#d08c5a', flyer: 'mFireflyLantern',
       shooter: 'mSeedTotem', projectile: '#8bc34a',
       decor: ['mGoldIdol', 'mRuinPillar', 'mStoneHead', 'mVineUrn', 'fern'],
       particles: 'leaves', gravity: 1,
@@ -2308,7 +2317,7 @@
         band(c, w, h, 352, wv, '#f6cf88');
         // озерця
         for (const x of spread(w, 2, r, 0.4)) wrap(w, x, 170, X => {
-          const y = bandY(w, 352, wv, X) + 24;
+          const y = bandY(w, 352, wv, X) - 8;
           c.fillStyle = '#7cc04a'; ell(c, X, y, 160, 22);
           const g = c.createLinearGradient(0, y - 14, 0, y + 14);
           g.addColorStop(0, '#3fc0f0'); g.addColorStop(1, '#1e88c8');
