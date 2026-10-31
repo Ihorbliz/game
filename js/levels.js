@@ -762,7 +762,7 @@ function generateLevel80(L) {
       if (gy < 9) toLow(9);
       lay(2);
       const kMax = Math.max(3, Math.min(gy - 3, Math.floor(bounceUp - 2) + 1));
-      const k = ri(Math.min(kMax, upMax + 2), kMax);
+      const k = Math.max(Math.min(kMax, upMax + 2), kMax - (rng() < 0.3 ? 1 : 0));
       const bc = lay(2, false);
       bouncy(bc, gy - 1);
       // хто тримає «вправо», пролітає над стіною: верх стіни — такий, щоб на нього приземлитись,
