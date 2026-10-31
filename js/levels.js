@@ -471,3 +471,566 @@ function generateLevel(L) {
     bananas, enemies, springs, movers, checkpoints, decor, boxes, hearts, goal, totalBananas,
   };
 }
+
+// ======================================================================
+// Рівні 41–80 (L 40..79). Складність e = 0..1. Генератор дивиться ЛИШЕ на прапорці теми
+// (gravity, jumpBoost, swim, ice, conveyor, bounce, skyLevel), а не на номер світу.
+// Нові клітинки: 8 ворота білочки, 9/10 конвеєр вліво/вправо, 11 желе-батут.
+// ======================================================================
+function generateLevel80(L) {
+  const th = THEMES[L] || THEMES[L % 15];
+  const rng = mulberry32(12345 + L * 977);
+  const ri = (a, b) => a + Math.floor(rng() * (b - a + 1));
+  const e = Math.min(1, (L - 40) / 39);
+  const g = th.gravity || 1, jb = th.jumpBoost || 1;
+  const swim = !!th.swim, ice = !!th.ice, conv = !!th.conveyor, bnc = !!th.bounce, sky = !!th.skyLevel;
+  const space = !swim && g < 0.8;
+  // фізика стрибка (як у game.js): час польоту, найширша «чесна» яма, висота стрибка й батута
+  const air = 0.7 * jb / Math.sqrt(g);
+  const physGap = Math.floor((0.72 * air * 215 + 22) / T);
+  const apex = 122.5 * jb * jb / T;                       // клітинок
+  const upMax = Math.max(2, Math.floor(apex - 1.3));      // сходинка, на яку легко застрибнути
+  const bounceUp = 240 * jb * jb / T;                     // злет із желе, клітинок
+  const gapCap = ice ? 3 : swim ? 6 + Math.round(2 * e) : space ? Math.min(7, physGap, 5 + Math.round(2 * e)) : Math.min(4, physGap);
+  const target = Math.round(230 + 80 * e);
+  const MAXW = 12 + target + 160;
+
+  const grid = [];
+  for (let r = 0; r < ROWS; r++) grid.push(new Uint8Array(MAXW));
+  const deco = new Uint8Array(MAXW);
+  const bananas = [], enemies = [], springs = [], movers = [], checkpoints = [], decor = [], hearts = [], gates = [];
+  const boxes = new Map();
+  const spans = [], shootCols = [], boxesAt = [], hist = [];
+  let x = 0, gy = 11;
+
+  // ---------- помічники ----------
+  const col = (c, top) => { for (let r = top; r < ROWS; r++) grid[r][c] = 1; };
+  const lay = (n, ok = true) => {
+    const s = x;
+    for (let i = 0; i < n; i++) { col(x, gy); if (ok) deco[x] = 1; x++; }
+    return s;
+  };
+  const skip = n => { const s = x; x += n; return s; };
+  const ban = (tx, ty) => { if (ty >= 1) bananas.push({ x: tx * T + T / 2, y: ty * T + T / 2, got: false }); };
+  const walker = (tx, ty = gy, canHop = true) => {
+    const o = {
+      type: 'walker', x: tx * T + T / 2, y: ty * T, vx: -(100 + 10 * e), vy: 0,
+      w: 26, h: 24, dead: 0, style: th.enemy, seed: rng() * 10,
+    };
+    const r = rng();
+    if (canHop && r < 0.3 + 0.3 * e) { o.hop = true; o.hopT = 1 + rng(); }
+    else if (L >= 44 && r > 0.75 - 0.3 * e) { o.charge = true; o.vx = -Math.round(70 + 20 * e); }   // «бігун»
+    enemies.push(o);
+  };
+  const flyer = (fx, fy) => enemies.push({
+    type: 'flyer', x: fx, y: fy, baseX: fx, baseY: fy, t: rng() * 6,
+    w: 26, h: 22, dead: 0, style: th.flyer, seed: rng() * 10, range: 2 * T, face: 1,
+    spd: Math.round((1.25 + 0.35 * e) * 100) / 100,
+  });
+  const shooter = (tx, ty) => {
+    enemies.push({
+      type: 'shooter', x: tx * T + T / 2, y: ty * T, w: 28, h: 30, dead: 0, style: th.shooter,
+      seed: rng() * 10, dir: -1, rate: Math.round((4 - 1.1 * e - 0.3 * rng()) * 100) / 100, t: Math.round(rng() * 200) / 100,
+    });
+    shootCols.push(tx);
+  };
+  const spikeRun = n => {
+    const s = lay(n, false);
+    for (let c = s; c < s + n; c++) grid[gy - 1][c] = 6;
+    return s;
+  };
+  const gapW = (cap = gapCap) => {
+    if (swim) return ri(3, cap);
+    const r = rng();
+    let w = cap;
+    if (r < 0.2) w -= 2; else if (r < 0.55 - 0.15 * e) w -= 1;
+    return Math.max(2, w);
+  };
+  // висота приземлення після ями (на найширшій ямі — не вгору)
+  const landDh = (w = 0) => {
+    if (rng() >= 0.45) return 0;
+    const opts = [-1, 1, 2].filter(v => gy + v >= 7 && gy + v <= 11 && !(v < 0 && !swim && w >= physGap));
+    return opts.length ? opts[Math.floor(rng() * opts.length)] : 0;
+  };
+  const sep = () => { const o = [-1, 1].filter(v => gy + v >= 7 && gy + v <= 11); gy += o[Math.floor(rng() * o.length)]; };
+  const toLow = lo => { while (gy < lo) { gy = Math.min(lo, gy + 2); lay(2, false); } };
+  const bouncy = (c, r) => { grid[r][c] = 11; grid[r][c + 1] = 11; };
+
+  // ---------- шматки траси ----------
+  const C = {
+    flat() {
+      const n = ri(4, 7), s = lay(n);
+      if (rng() < 0.25) for (let c = s + 1; c < s + n - 1; c++) ban(c, gy - 2);
+    },
+    gap() {
+      const w = gapW(), gy0 = gy, gs = skip(w);
+      for (let i = 0; i < w; i++) ban(gs + i, gy0 - (w >= 5 ? 5 : 4));
+      gy += landDh(w);
+      lay(ri(2, 3) + (ice ? 1 : 0));
+    },
+    gapfly() {
+      lay(2);
+      const w = gapW(Math.max(3, gapCap - 1)), gy0 = gy, gs = skip(w);
+      flyer((gs + w / 2) * T, (gy0 - 4) * T - 16);
+      ban(gs + Math.floor(w / 2), gy0 - 3);
+      gy += landDh(w);
+      lay(3 + (ice ? 1 : 0));
+    },
+    step() {
+      const opts = [-2, -1, 1, 2].filter(v => gy + v >= 7 && gy + v <= 11);
+      gy += opts[Math.floor(rng() * opts.length)];
+      const s = lay(ri(2, 4));
+      if (rng() < 0.25) ban(s + 1, gy - 2);
+    },
+    spikes() {
+      lay(ri(2, 3) + (ice ? 1 : 0));
+      const k = ri(1, ice ? 2 : 3), s = spikeRun(k);
+      if (rng() < 0.6) for (let c = s; c < s + k; c++) ban(c, gy - 4);
+      lay(2 + (ice ? 1 : 0));
+      if (!ice && rng() < 0.4 + 0.2 * e) { spikeRun(ri(1, e > 0.5 ? 3 : 2)); lay(2); }
+      lay(ri(0, 1));
+    },
+    enemy() {
+      const n = ri(8, 12), s = lay(n);
+      let k = 1 + (rng() < 0.45 + 0.35 * e ? 1 : 0);
+      if (n >= 11 && rng() < 0.3 + 0.4 * e) k = 3;
+      if (k === 1) walker(s + Math.floor(n / 2));
+      else for (let i = 0; i < k; i++) walker(s + 2 + Math.round(i * (n - 5) / (k - 1)));
+      if (rng() < 0.35) ban(s + Math.floor(n / 2), gy - 3);
+      if (n >= 10 && rng() < 0.3 + 0.3 * e) flyer((s + n / 2) * T, (gy - 4) * T);
+    },
+    spikeEnemies() {
+      const n1 = ri(4, 5), s1 = lay(n1);
+      walker(s1 + 1);
+      const k = ri(1, ice ? 1 : 2), sk = spikeRun(k);
+      for (let c = sk; c < sk + k; c++) ban(c, gy - 4);
+      const n2 = ri(4, 5), s2 = lay(n2);
+      walker(s2 + n2 - 2);
+    },
+    boxes() {
+      const s = lay(8), bw = ri(3, 4), b0 = s + 2, row = gy - 3;
+      const nb = Math.min(bw, ri(2, 3));
+      const pos = new Set();
+      while (pos.size < nb) pos.add(ri(0, bw - 1));
+      for (let i = 0; i < bw; i++) {
+        const c = b0 + i;
+        if (pos.has(i)) { grid[row][c] = 3; boxes.set(`${c},${row}`, 'banana'); }
+        else { grid[row][c] = 2; if (rng() < 0.5) ban(c, row - 1); }
+      }
+      boxesAt.push(s);
+    },
+    perch() {
+      const n = ri(9, 10), s = lay(n), pw = ri(3, 4), p0 = s + 3, row = gy - 3;
+      for (let i = 0; i < pw; i++) grid[row][p0 + i] = 2;
+      if (rng() < 0.5) { const bc = p0 + ri(0, pw - 1); grid[row][bc] = 3; boxes.set(`${bc},${row}`, 'banana'); }
+      walker(p0 + Math.floor(pw / 2), row, false);
+      ban(p0, row - 2); ban(p0 + pw - 1, row - 2);
+    },
+    stairs() {
+      const n = Math.min(ri(2, 3), gy - 7), sw = ri(1, 2);
+      for (let i = 0; i < n; i++) { gy--; lay(sw, false); }
+      if (rng() < 0.5) {
+        lay(2, false);
+        const ps = skip(2);
+        ban(ps, gy - 3); ban(ps + 1, gy - 3);
+        lay(3, false);
+      } else {
+        const p = ri(3, 5), s = lay(p, false);
+        for (let c = s; c < s + p; c++) if (rng() < 0.5) ban(c, gy - 2);
+      }
+      for (let i = 0; i < n; i++) { gy++; lay(sw, false); }
+      lay(2);
+      if (!ice && rng() < 0.6) { spikeRun(ri(1, 2)); lay(2); }
+    },
+    hop() {
+      const k = ri(3, 4), code = sky ? 5 : 2;
+      let h = 0, prevCr = true;
+      for (let i = 0; i < k; i++) {
+        skip(2);
+        h = Math.max(0, Math.min(2, h + ri(i === 0 ? 0 : -1, 1)));
+        const cr = !prevCr && rng() < 0.3 + 0.3 * e;
+        for (let j = 0; j < 2; j++) { grid[gy - h][x] = cr ? 7 : code; ban(x, gy - h - 1); x++; }
+        prevCr = cr;
+      }
+      skip(2);
+      lay(3);
+    },
+    crumble() {
+      lay(2);
+      const c = ri(2, 4);
+      let a = 0, b = 0;
+      if (c === 2 || (c === 3 && rng() < 0.4)) { if (rng() < 0.5) a = 2; else b = 2; }
+      skip(a);
+      for (let i = 0; i < c; i++) { grid[gy][x] = 7; ban(x, gy - 2); x++; }
+      skip(b);
+      lay(ri(2, 3) + (ice ? 1 : 0));
+    },
+    lift() {
+      toLow(ri(10, 11));
+      lay(ri(3, 4), false);
+      const gy0 = gy, ps = skip(3);
+      const ng = gy0 - (gy0 >= 11 ? ri(4, 5) : 4);
+      movers.push({
+        axis: 'y', x: ps * T, y: gy0 * T, y0: ng * T, y1: gy0 * T,
+        w: 3 * T, h: 14, dir: 1, speed: Math.round(55 + e * 25), dy: 0, dx: 0,
+      });
+      ban(ps + 1, gy0 - 2);
+      gy = ng;
+      lay(ri(4, 6));
+    },
+    mover() {
+      // у космосі — довга подорож на платформі над порожнечею
+      lay(space ? 2 : 0);
+      const pw = space ? ri(8, 11) : ri(6, 8), ps = skip(pw);
+      movers.push({
+        axis: 'x', x0: ps * T + 4, x1: (ps + pw - 3) * T - 4, x: ps * T + 4, y: gy * T,
+        w: 3 * T, h: 14, dir: 1, speed: Math.round(70 + e * 40), dx: 0,
+      });
+      for (let c = ps + 1; c < ps + pw - 1; c += 2) ban(c, gy - 1);
+      lay(3);
+    },
+    flyer() {
+      const s = lay(8);
+      flyer((s + 4) * T + T / 2, (gy - 3) * T);
+      if (swim && e > 0.4 && gy >= 9 && rng() < 0.5) flyer((s + 4) * T, (gy - 6) * T);   // друга рибка вище
+    },
+    clouds() {
+      const s = lay(9);
+      for (let c = s + 1; c <= s + 3; c++) { grid[gy - 3][c] = 5; if (rng() < 0.3) ban(c, gy - 4); }
+      if (gy - 6 >= 2) for (let c = s + 4; c <= s + 7; c++) { grid[gy - 6][c] = 5; ban(c, gy - 7); }
+    },
+    spring() {
+      lay(2, false);
+      const sc = lay(1, false);
+      springs.push({ x: sc * T + T / 2, y: gy * T, comp: 0 });
+      const w0 = x;
+      for (let i = 0; i < 2; i++) { col(x, gy); for (let r = gy - 5; r < gy; r++) grid[r][x] = 2; x++; }
+      ban(sc, gy - 3); ban(sc, gy - 5);
+      ban(w0, gy - 6); ban(w0 + 1, gy - 6);
+      ban(w0 + 2, gy - 4);
+      lay(1, false);
+      lay(2);
+    },
+
+    // ----- нове: стрілець (стоїть, плюється кульками; ≥6 рівних клітинок перед ним) -----
+    shooter() {
+      lay(2);
+      if (rng() < 0.5) {               // «щит»: блоки, на які можна вилізти / за якими сховатись
+        const s = lay(2, false);
+        grid[gy - 1][s] = 2; grid[gy - 1][s + 1] = 2;
+        lay(1);
+      }
+      const a = ri(6, 8);
+      lay(a);
+      if (gy >= 9 && rng() < 0.25 + 0.25 * e) {
+        // стрілець на поличці: кульки летять над головою, зачепити можна лише у стрибку
+        const p = lay(3, false), row = gy - 3;
+        for (let i = 0; i < 3; i++) grid[row][p + i] = 2;
+        shooter(p + 1, row);
+        ban(p + 1, gy - 1);
+      } else {
+        const sc = lay(1, false);
+        shooter(sc, gy);
+        ban(sc, gy - 3);
+      }
+      lay(4, false);
+    },
+    // ----- нове: ворота білочки (тунель під землею; рівна земля, нічого небезпечного) -----
+    gate() {
+      sep();
+      const eo = ri(2, 4), xo = ri(2, 3), bo = ri(1, 2);
+      const s = lay(eo + xo + bo + 5, false);
+      const ec = s + 2, tx = ec + eo, xc = tx + xo, bc = xc + bo;
+      for (let r = 0; r < gy; r++) grid[r][tx] = 8;
+      const inner = [];
+      for (let c = ec + 1; c < xc; c++) inner.push(c);
+      const nb = ri(0, 3), gb = [];
+      for (let i = 0; i < nb && inner.length; i++) gb.push(inner.splice(ri(0, inner.length - 1), 1)[0]);
+      gb.sort((p, q) => p - q);
+      gates.push({
+        tx, gy, ex: ec * T + T / 2, xx: xc * T + T / 2, bx: bc * T + T / 2,
+        bananas: gb.map(c => ({ x: c * T + T / 2, y: (gy + 1) * T + 12, got: false })), open: 0,
+      });
+      spans.push([s, x - 1]);
+      sep();
+      lay(2);
+    },
+    // ----- нове: желе-батут перед високою стіною -----
+    bouncyWall() {
+      if (gy < 9) toLow(9);
+      lay(2);
+      const kMax = Math.max(3, Math.min(gy - 3, Math.floor(bounceUp - 2) + 1));
+      const k = ri(Math.min(kMax, upMax + 2), kMax);
+      const bc = lay(2, false);
+      bouncy(bc, gy - 1);
+      const ww = ri(2, 4), w0 = x;
+      for (let i = 0; i < ww; i++) { col(x, gy); for (let r = gy - k; r < gy; r++) grid[r][x] = 2; ban(x, gy - k - 1); x++; }
+      for (let r = gy - 3; r > gy - k - 1; r -= 2) ban(bc + 1, r);
+      ban(w0 + ww, gy - k + 1);
+      lay(1, false);
+      lay(2);
+    },
+    // ----- нове: желе під високим бонус-островом (хмаринка, крізь яку пролітаєш знизу) -----
+    bouncyHigh() {
+      lay(3);
+      const bc = lay(2, false);
+      bouncy(bc, gy - 1);
+      const hr = Math.max(2, gy - Math.min(7, Math.floor(bounceUp - 1.5)));
+      lay(5);
+      for (let c = bc - 1; c <= bc + 3; c++) { grid[hr][c] = 5; ban(c, hr - 1); }
+      if (hr - 2 >= 1) ban(bc + 1, hr - 2);
+    },
+    // ----- нове: конвеєри -----
+    conveyor() {
+      lay(2);
+      const k = ri(1, 2);
+      for (let j = 0; j < k; j++) {
+        const n = ri(4, 8), d = rng() < 0.5 ? 9 : 10, s = lay(n, false);
+        for (let c = s; c < s + n; c++) { grid[gy][c] = d; if (rng() < 0.4) ban(c, gy - 2); }
+        lay(2, false);
+      }
+      lay(1);
+    },
+    convGap() {
+      // стрічка тягне назад, а попереду яма: розженись і стрибай
+      lay(2);
+      const n = ri(4, 6), s = lay(n, false);
+      for (let c = s; c < s + n; c++) grid[gy][c] = 9;
+      const w = Math.min(3, gapW()), gy0 = gy, gs = skip(w);
+      for (let i = 0; i < w; i++) ban(gs + i, gy0 - 4);
+      gy += landDh(w);
+      lay(3);
+    },
+    convBridge() {
+      lay(2);
+      const n = ri(4, 7), d = rng() < 0.5 ? 9 : 10, s = skip(n);
+      for (let c = s; c < s + n; c++) { grid[gy][c] = d; if (rng() < 0.5) ban(c, gy - 2); }
+      lay(ri(2, 3));
+    },
+    // ----- нове (космос): «астероїди» — камінці над порожнечею на різній висоті -----
+    asteroids() {
+      lay(2);
+      const k = ri(3, 4 + Math.round(e));
+      let h = 0, prevCr = true;
+      for (let i = 0; i < k; i++) {
+        const nh = Math.max(0, Math.min(Math.min(3, upMax - 1, gy - 3), h + ri(-1, 2)));
+        const rise = Math.max(0, nh - h);
+        skip(ri(2, Math.max(2, Math.min(physGap - 1 - rise, 3 + Math.round(2 * e), gapCap))));
+        const cr = !prevCr && rng() < 0.3 + 0.3 * e;
+        const sw = cr ? 2 : ri(2, 3), code = cr ? 7 : (sky || rng() < 0.4 ? 5 : 2);
+        for (let j = 0; j < sw; j++) { grid[gy - nh][x] = code; ban(x, gy - nh - 1); x++; }
+        h = nh; prevCr = cr;
+      }
+      skip(ri(2, Math.max(2, Math.min(physGap - 1, 4, gapCap))));
+      lay(3);
+    },
+    // ----- нове (космос): високі хмаринки-платформи -----
+    skyHigh() {
+      const st = Math.min(3, upMax - 1);
+      if (rng() < 0.5) {
+        const n = ri(12, 14), s = lay(n);
+        let r = gy - 3, c = s + 1;
+        while (c + 2 <= s + n - 2 && r >= 2) {
+          for (let j = 0; j < 3; j++) { grid[r][c + j] = 5; ban(c + j, r - 1); }
+          c += 4; r -= st;
+        }
+        if (rng() < 0.6) walker(s + n - 2);
+      } else {
+        lay(2);
+        const gy0 = gy, hs = [gy0 - 2, gy0 - 2 - st, gy0 - 1 - st].map(r => Math.max(2, r));
+        for (const r of hs) {
+          skip(ri(2, 3));
+          for (let j = 0; j < 3; j++) { grid[r][x] = 5; ban(x, r - 1); x++; }
+        }
+        skip(ri(2, 3));
+        lay(3);
+      }
+    },
+    // ----- нове (вода): висока скеля — треба пропливти вгору -----
+    tallWall() {
+      toLow(10);
+      lay(2);
+      const kMax = Math.min(5 + Math.round(3 * e), gy - 3);
+      const k = ri(Math.min(kMax, 5), kMax);
+      const ww = ri(2, 4), w0 = x;
+      for (let i = 0; i < ww; i++) { col(x, gy - k); ban(x, gy - k - 1); x++; }
+      for (let r = gy - 2; r > gy - k; r -= 2) ban(w0 - 1, r);
+      lay(1, false);
+      lay(2);
+    },
+    // ----- нове (вода): шипи на дні, а вгорі — уступ із бананами -----
+    highLedge() {
+      lay(2);
+      const s = x;
+      lay(2);
+      spikeRun(ri(1, 3));
+      lay(2);
+      if (rng() < 0.5 + 0.3 * e) { spikeRun(ri(1, 3)); lay(2); }
+      const end = x;
+      lay(1);
+      const hr = Math.max(2, gy - ri(5, 6));
+      for (let c = s + 1; c < end - 1; c++) { grid[hr][c] = 5; if ((c - s) % 2) ban(c, hr - 1); }
+      if (hr - 3 >= 2 && rng() < 0.5 * e) flyer(((s + end) / 2) * T, (hr - 2) * T);
+    },
+  };
+
+  // ---------- ваги шматків ----------
+  const WT = {
+    flat: 2.2, gap: space ? 3.5 : swim ? 3.2 : 3, gapfly: (0.6 + 1.2 * e) * (swim ? 1.8 : 1),
+    step: space ? 1.2 : 2, spikes: (1.6 + 1.2 * e) * (ice ? 0.4 : swim ? 1.3 : 1), enemy: 3 + 2 * e,
+    spikeEnemies: (0.6 + 1.2 * e) * (ice ? 0.4 : 1), boxes: 2.2, perch: 0.8 + e, stairs: space ? 0.5 : 1.3,
+    hop: space ? 1 : 1.5, crumble: 1 + e, lift: space ? 1.2 : 0.8, mover: space ? 2.2 : 1,
+    flyer: (1.5 + 1.5 * e) * (swim ? 1.6 : 1), clouds: space ? 1.8 : 1.1, spring: space ? 0.2 : swim ? 0.3 : 0.7,
+    bouncyWall: bnc ? 2 : space ? 0.3 : swim ? 0.9 : 0.5, bouncyHigh: bnc ? 1.4 : space ? 0.3 : swim ? 0.8 : 0.4,
+    conveyor: conv ? 2.5 : 0, convGap: conv ? 1.4 : 0, convBridge: conv ? 1.2 : 0,
+    asteroids: space ? 2.6 : 0, skyHigh: space ? 1.8 : 0, tallWall: swim ? 2 : 0, highLedge: swim ? 1.6 : 0,
+  };
+  const NOPICK = new Set(['gate', 'shooter']);
+  const ENEMYCH = new Set(['enemy', 'flyer', 'gapfly', 'perch', 'spikeEnemies']);
+  const can = n => {
+    const last = hist[hist.length - 1];
+    if (ENEMYCH.has(n) && x < 16) return false;
+    if (last === 'lift' && (n === 'enemy' || n === 'perch' || n === 'spikeEnemies')) return false;
+    if (n === 'stairs' && gy - 1 < 7) return false;
+    return true;
+  };
+  const pick = () => {
+    const opts = [];
+    let tot = 0;
+    for (const n in WT) {
+      let w = WT[n];
+      if (!w || NOPICK.has(n) || !can(n)) continue;
+      if (hist.length >= 2 && hist[hist.length - 1] === n && hist[hist.length - 2] === n) continue;
+      if (sky && (n === 'hop' || n === 'clouds')) w *= 3;
+      opts.push([n, w]); tot += w;
+    }
+    let r = rng() * tot;
+    for (const [n, w] of opts) if ((r -= w) <= 0) return n;
+    return opts[opts.length - 1][0];
+  };
+  // обов'язкові «фішки» світу: [шматок, з якої частки траси]
+  const musts = [['spikes', 0.3], ['crumble', 0.5]];
+  if (!swim) musts.push(['lift', 0.42]);
+  if (space) musts.push(['asteroids', 0.15], ['skyHigh', 0.38], ['mover', 0.66]);
+  if (swim) musts.push(['tallWall', 0.12], ['highLedge', 0.45], ['gapfly', 0.66]);
+  if (conv) musts.push(['conveyor', 0.1], ['convGap', 0.36], ['convBridge', 0.62]);
+  if (bnc) musts.push(['bouncyWall', 0.2], ['bouncyHigh', 0.56]);
+  if (!space && !swim && !conv && !bnc) musts.push(['bouncyWall', 0.58]);
+
+  // ---------- збираємо трасу ----------
+  const estW = 12 + target + 22;
+  const nG = L < 50 ? ri(1, 2) : ri(2, 3);
+  const gAt = (nG === 1 ? [0.33] : nG === 2 ? [0.3, 0.62] : [0.28, 0.54, 0.8]).map(f => f * estW);
+  if (L === 40) gAt[0] = 18;                               // перша зустріч із воротами — одразу
+  const nS = L < 41 ? 0 : Math.min(4, Math.round(1 + 2.6 * e + 0.8 * rng()));
+  const sAt = [];
+  for (let i = 0; i < nS; i++) sAt.push(estW * (0.14 + 0.78 * (i + 0.5) / nS));
+  let lastGateEnd = -99;
+  lay(12);
+  while (x < 12 + target) {
+    let n;
+    const nw = enemies.filter(en => en.type === 'walker').length;
+    const last = hist[hist.length - 1];
+    // стрільці повертаються до гравця — ворота ставимо не ближче ніж за 14 клітинок після стрільця
+    const lastShot = shootCols.length ? shootCols[shootCols.length - 1] : -99;
+    if (gAt.length && x >= gAt[0] && x - lastShot >= 14) { n = 'gate'; gAt.shift(); }
+    else if (sAt.length && x >= sAt[0] && x - lastGateEnd >= 14) { n = 'shooter'; sAt.shift(); }
+    else if (x >= 16 && nw < (x / estW) * (4 + 8 * e) - 2 && last !== 'lift') n = 'enemy';
+    else if (x > estW * 0.6 && !boxesAt.some(c => c >= estW * 0.42)) n = 'boxes';
+    else {
+      const m = musts.find(([mn, f]) => x > estW * f && !hist.includes(mn) && can(mn));
+      n = m ? m[0] : pick();
+    }
+    C[n]();
+    if (n === 'gate') lastGateEnd = spans[spans.length - 1][1];
+    hist.push(n);
+  }
+  const endX = x;
+  lay(18);
+  const W = x;
+  const goal = { x: (endX + 8) * T + T / 2, y: gy * T };
+
+  // ---------- верх кожної колонки ----------
+  const topOf = c => { for (let r = 0; r < ROWS; r++) if (grid[r][c]) return r; return -1; };
+  const clearAbove = (c, top, k) => { for (let r = top - k; r < top; r++) if (r < 0 || grid[r][c]) return false; return true; };
+  const flatAt = c => {
+    const t = topOf(c);
+    if (t < 0 || grid[t][c] !== 1) return -1;
+    for (const cc of [c - 1, c, c + 1]) {
+      if (cc < 0 || cc >= W || topOf(cc) !== t || grid[t][cc] !== 1 || !clearAbove(cc, t, 3)) return -1;
+    }
+    return t;
+  };
+  const springCols = springs.map(s => Math.floor(s.x / T));
+  const nearSpring = c => springCols.some(s => Math.abs(s - c) <= 2);
+  const inSpan = (c, m = 0) => spans.some(([a, b]) => c >= a - m && c <= b + m);
+  const inFire = c => shootCols.some(s => c >= s - 9 && c <= s + 8);   // не відроджувати під обстрілом
+
+  // ---------- стрибунці не мають стрибати під низькою стелею ----------
+  {
+    const sol = v => (v >= 1 && v <= 5) || (v >= 7 && v <= 11);
+    for (const en of enemies) {
+      if (!en.hop) continue;
+      const r = en.y / T, c0 = Math.floor(en.x / T);
+      let a = c0, b = c0;
+      const walk = c => c > 0 && c < W - 1 && sol(grid[r][c]) && !grid[r - 1][c];
+      while (walk(a - 1)) a--;
+      while (walk(b + 1)) b++;
+      let ok = true;
+      for (let c = a - 1; c <= b + 1 && ok; c++) for (let rr = Math.max(0, r - 4); rr < r - 1; rr++) if (sol(grid[rr][c])) ok = false;
+      if (!ok) { delete en.hop; delete en.hopT; }
+    }
+  }
+
+  // ---------- контрольні точки ----------
+  const cpCols = [];
+  for (const p of [0.25, 0.5, 0.75]) {
+    for (let c = Math.floor(W * p); c < endX + 4; c++) {
+      if (nearSpring(c) || inSpan(c, 1) || inFire(c) || cpCols.some(k => Math.abs(k - c) < 6)) continue;
+      const t = flatAt(c);
+      if (t < 0) continue;
+      checkpoints.push({ x: c * T + T / 2, y: t * T, active: false });
+      cpCols.push(c);
+      break;
+    }
+  }
+
+  // ---------- сердечка ----------
+  const keys = [...boxes.keys()];
+  let hk = keys.find(k => +k.split(',')[0] >= W * 0.4);
+  if (!hk && keys.length) hk = keys[keys.length - 1];
+  if (hk) boxes.set(hk, 'heart');
+  if (cpCols.length) {
+    for (let c = cpCols[cpCols.length - 1] + 3; c < W - 2; c++) {
+      const t = topOf(c);
+      if (t < 3 || grid[t][c] !== 1 || !clearAbove(c, t, 3) || inSpan(c, 1)) continue;
+      hearts.push({ x: c * T + T / 2, y: (t - 2) * T + T / 2, got: false });
+      break;
+    }
+  }
+
+  // ---------- прикраси ----------
+  const busy = new Set([5, endX + 8, endX + 7, endX + 9, ...cpCols, ...cpCols.map(c => c + 1), ...cpCols.map(c => c - 1)]);
+  for (let c = 1; c < W - 1; c++) {
+    if (!deco[c] || busy.has(c) || nearSpring(c) || inSpan(c, 1)) continue;
+    const t = flatAt(c);
+    if (t < 0 || rng() >= 0.22) continue;
+    decor.push({
+      x: c * T + T / 2 + (rng() - 0.5) * 10, y: t * T,
+      kind: th.decor[Math.floor(rng() * th.decor.length)], s: 0.8 + rng() * 0.5,
+    });
+    c += 2;
+  }
+
+  // ---------- обрізаємо сітку до W ----------
+  const out = grid.map(row => row.slice(0, W));
+  let totalBananas = bananas.length;
+  for (const v of boxes.values()) if (v === 'banana') totalBananas++;
+  for (const gt of gates) totalBananas += gt.bananas.length;
+
+  return {
+    L, W, H: ROWS, grid: out,
+    start: { x: 5 * T + T / 2, y: 11 * T },
+    bananas, enemies, springs, movers, checkpoints, decor, boxes, hearts, goal, totalBananas, gates,
+  };
+}
