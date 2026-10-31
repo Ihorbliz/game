@@ -555,6 +555,8 @@ function generateLevel80(L) {
   const sep = () => { const o = [-1, 1].filter(v => gy + v >= 7 && gy + v <= 11); gy += o[Math.floor(rng() * o.length)]; };
   const toLow = lo => { while (gy < lo) { gy = Math.min(lo, gy + 2); lay(2, false); } };
   const bouncy = (c, r) => { grid[r][c] = 11; grid[r][c + 1] = 11; };
+  // скільки клітинок пролетить гравець на повній швидкості: від висоти h над рівнем до апексу і вниз на h + drop
+  const flyTiles = (h, drop) => 215 * (Math.sqrt(2 * h * T / (2000 * g)) + Math.sqrt(2 * (h + drop) * T / (2000 * g))) / T;
 
   // ---------- шматки траси ----------
   const C = {
@@ -763,12 +765,16 @@ function generateLevel80(L) {
       const k = ri(Math.min(kMax, upMax + 2), kMax);
       const bc = lay(2, false);
       bouncy(bc, gy - 1);
-      const ww = ri(2, 4), w0 = x;
+      // хто тримає «вправо», пролітає над стіною: верх стіни — такий, щоб на нього приземлитись,
+      // а за стіною — довга безпечна смуга (на випадок перельоту)
+      const hx = Math.max(0.5, bounceUp - (k - 1));                       // клітинок над верхом стіни
+      const dTop = flyTiles(hx, 0), dGround = flyTiles(hx, k);
+      const ww = Math.min(9, Math.max(ri(2, 3), Math.ceil(dTop) + 1)), w0 = x;
       for (let i = 0; i < ww; i++) { col(x, gy); for (let r = gy - k; r < gy; r++) grid[r][x] = 2; ban(x, gy - k - 1); x++; }
       for (let r = gy - 3; r > gy - k - 1; r -= 2) ban(bc + 1, r);
       ban(w0 + ww, gy - k + 1);
       lay(1, false);
-      lay(2);
+      lay(Math.max(2, Math.ceil(dGround) + 2 - ww));
     },
     // ----- нове: желе під високим бонус-островом (хмаринка, крізь яку пролітаєш знизу) -----
     bouncyHigh() {
@@ -776,7 +782,7 @@ function generateLevel80(L) {
       const bc = lay(2, false);
       bouncy(bc, gy - 1);
       const hr = Math.max(2, gy - Math.min(7, Math.floor(bounceUp - 1.5)));
-      lay(5);
+      lay(Math.max(5, Math.ceil(flyTiles(bounceUp, 1)) + 2));            // переліт на повній швидкості — на рівне
       for (let c = bc - 1; c <= bc + 3; c++) { grid[hr][c] = 5; ban(c, hr - 1); }
       if (hr - 2 >= 1) ban(bc + 1, hr - 2);
     },
@@ -985,7 +991,12 @@ function generateLevel80(L) {
   // ---------- контрольні точки ----------
   const cpCols = [];
   for (const p of [0.25, 0.5, 0.75]) {
-    for (let c = Math.floor(W * p); c < endX + 4; c++) {
+    // спершу трохи вперед, потім трохи назад, а вже тоді — далі вперед
+    const c0 = Math.floor(W * p), near = Math.round(W * 0.05), order = [];
+    for (let c = c0; c <= c0 + near; c++) order.push(c);
+    for (let c = c0 - 1; c >= c0 - near; c--) order.push(c);
+    for (let c = c0 + near + 1; c < endX + 4; c++) order.push(c);
+    for (const c of order) {
       if (nearSpring(c) || inSpan(c, 1) || inFire(c) || cpCols.some(k => Math.abs(k - c) < 6)) continue;
       const t = flatAt(c);
       if (t < 0) continue;
