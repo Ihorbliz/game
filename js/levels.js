@@ -5,6 +5,7 @@
 // Рівні 1–15 (L 0..14) мусять лишатися точно такими, як були: уся нова логіка — лише для L >= 15 (hard).
 
 function generateLevel(L) {
+  if (L >= 40) return generateLevel80(L);   // рівні 41–80 — окремий генератор (1–40 не змінюються)
   const th = THEMES[L] || THEMES[L % 15];
   const rng = mulberry32(12345 + L * 977);
   const ri = (a, b) => a + Math.floor(rng() * (b - a + 1));
