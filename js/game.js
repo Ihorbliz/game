@@ -577,7 +577,8 @@
       const tg = trailTarget();
       c.x += (tg.x - c.x) * Math.min(1, dt * 12);
       c.y += (tg.y - c.y) * Math.min(1, dt * 12);
-      if (!G.win) { tryAcorn(); tryFetch(); }
+      // білочка-помічниця — лише на нових рівнях 41+
+      if (!G.win && G.L >= 40) { tryAcorn(); tryFetch(); }
     }
     const dx = c.x - ox;
     c.moving = Math.abs(dx) > 0.12;
@@ -1041,8 +1042,8 @@
     const slots = Math.max(3, G.hearts);
     for (let i = 0; i < slots; i++) Art.heart(ctx, 30 + i * 32, 30, 1.25, i < G.hearts ? '#ff3b5c' : 'rgba(0,0,0,0.3)');
     if (G.hearts > 0) for (let i = 0; i < G.hearts; i++) { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ell(ctx, 30 + i * 32 - 6, 25, 3, 2, -0.6); }
-    // жолудь білочки: світиться, коли готова кинути
-    {
+    // жолудь білочки: світиться, коли готова кинути (лише на рівнях 41+)
+    if (G.L >= 40) {
       const ax = 30 + slots * 32 + 12, ready = G.comp.acornCD <= 0;
       ctx.fillStyle = 'rgba(0,0,0,0.25)';
       circ(ctx, ax, 30, 14);
