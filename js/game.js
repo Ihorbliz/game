@@ -343,7 +343,8 @@
         else if (t === 10) belt = 1;
       }
       if (bounceT >= 0) {
-        p.vy = -980 * Math.sqrt(th.gravity) * (th.jumpBoost || 1);
+        // батут, але не вище за верх екрана
+        p.vy = Math.max(-980 * Math.sqrt(th.gravity) * (th.jumpBoost || 1), -Math.sqrt(2 * GRAV * th.gravity * Math.max(0, p.y - 48)));
         p.onGround = false;
         p.sx = 0.7; p.sy = 1.35;
         G.bumps.push({ tx: bounceT, ty, t: 0.18 });
@@ -474,7 +475,9 @@
       if (e.dead) { e.dead += dt; continue; }
       if (Math.abs(e.x - cx) > VW) continue; // далеко за екраном — чекає
       if (e.type === 'shooter') {
-        e.dir = p.x < e.x ? -1 : 1;
+        const nd = p.x < e.x ? -1 : 1;
+        // розвернувся — трохи чекає, щоб не стріляти міньйону в спину одразу
+        if (e.dir !== nd) { e.dir = nd; e.t = Math.min(e.t || 0, (e.rate || 3) - 1.4); }
         e.t = (e.t || 0) + dt;
         if (e.t >= (e.rate || 3)) {
           e.t = 0;
@@ -489,7 +492,7 @@
           e.base = e.base || Math.abs(e.vx);
           const ahead = (p.x - e.x) * Math.sign(e.vx);
           e.charging = ahead > 0 && ahead < 5 * T && Math.abs(p.y - e.y) < T;
-          e.vx = Math.sign(e.vx) * e.base * (e.charging ? 2.2 : 1);
+          e.vx = Math.sign(e.vx) * e.base * (e.charging ? 1.7 : 1);
         }
         e.vy = Math.min(e.vy + g * dt, MAXFALL);
         const prevBot = e.y;
