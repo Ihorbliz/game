@@ -868,10 +868,10 @@ function generateLevel80(L) {
     highLedge() {
       lay(2);
       const s = x;
-      lay(2);
-      spikeRun(ri(1, 3));
-      lay(2);
-      if (rng() < 0.5 + 0.3 * e) { spikeRun(ri(1, 3)); lay(2); }
+      lay(2 + (ice ? 1 : 0));
+      spikeRun(ri(1, ice ? 2 : 3));
+      lay(2 + (ice ? 1 : 0));
+      if (rng() < 0.5 + 0.3 * e) { spikeRun(ri(1, ice ? 2 : 3)); lay(2 + (ice ? 1 : 0)); }
       const end = x;
       lay(1);
       const hr = Math.max(2, gy - ri(5, 6));
