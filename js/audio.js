@@ -89,6 +89,11 @@ const Sound = (() => {
     poof: t => noise(t, 0.3, { vol: 0.18, freq: 2500, type: 'bandpass' }),
     fall: t => tone(760, t, 0.65, { type: 'triangle', vol: 0.22, slideTo: 140 }),
     click: t => tone(700, t, 0.06, { type: 'triangle', vol: 0.18 }),
+    swim: t => { tone(420, t, 0.12, { type: 'sine', vol: 0.18, slideTo: 760 }); noise(t, 0.08, { vol: 0.06, freq: 1800, type: 'bandpass' }); },
+    throw: t => { noise(t, 0.12, { vol: 0.12, freq: 3000, type: 'bandpass' }); tone(500, t, 0.12, { type: 'triangle', vol: 0.12, slideTo: 900 }); },
+    shoot: t => tone(300, t, 0.12, { type: 'square', vol: 0.07, slideTo: 160, filter: 1500 }),
+    gate: t => { noise(t, 0.6, { vol: 0.18, freq: 400 }); arp(t + 0.1, [67, 71, 74, 79], 0.09, { type: 'triangle', vol: 0.24, dur: 0.2 }); },
+    dig: t => noise(t, 0.25, { vol: 0.14, freq: 700 }),
     win: t => {
       const mel = [72, 76, 79, 84, 79, 84, 88];
       const tim = [0, 0.12, 0.24, 0.36, 0.6, 0.72, 0.9];

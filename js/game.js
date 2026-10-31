@@ -85,6 +85,9 @@
   function startLevel(L) {
     G.L = L;
     G.lv = generateLevel(L);
+    G.lv.gates = G.lv.gates || [];
+    G.gateCol = new Map();
+    for (const g of G.lv.gates) { g.state = 'closed'; g.open = 0; g.pressed = false; G.gateCol.set(g.tx, g); }
     G.hearts = 3;
     G.bananas = 0;
     G.cp = null;
@@ -105,7 +108,10 @@
   function spawnPlayer(x, y) {
     G.p = { x, y, vx: 0, vy: 0, w: 22, h: 40, facing: 1, onGround: false, coyote: 0, jbuf: 0, inv: 0, anim: 0, sx: 1, sy: 1, onMover: null, blinkT: 2, idle: 0 };
     G.trail = [{ x, y }];
-    G.comp = { x: x - 40, y, facing: 1, moving: false, t: 0, hop: 0, blinkT: 3 };
+    G.comp = { x: x - 40, y, facing: 1, moving: false, t: 0, hop: 0, blinkT: 3, mode: 'follow', acornCD: 3, fetchCD: 1, throwT: 0 };
+    G.acorns = [];
+    G.shots = [];
+    for (const g of G.lv.gates || []) if (g.state === 'squirrel') g.state = 'closed';
     G.cam = clamp(x - VW * 0.4, 0, Math.max(0, G.lv.W * T - VW));
     G.lastCam = G.cam;
   }
@@ -117,7 +123,7 @@
     if (ty < 0 || ty >= ROWS) return 0;
     return lv.grid[ty][tx];
   }
-  const solid = t => (t >= 1 && t <= 4) || t === 7;
+  const solid = t => (t >= 1 && t <= 4) || (t >= 7 && t <= 11);
 
   function moveX(b, dx) {
     b.x += dx;
@@ -227,6 +233,9 @@
     if (G.state !== 'play') return;
     updateEnemies(dt, th);
     updateComp(dt);
+    updateGates(dt);
+    updateShots(dt);
+    updateAcorns(dt);
 
     for (const q of G.parts) {
       q.life -= dt;
@@ -257,10 +266,11 @@
 
     if (dir) {
       const turning = p.vx * dir < 0;
-      p.vx += dir * (p.onGround ? 1900 : 1400) * (turning ? 2 : 1) * dt;
+      const iceK = th.ice && p.onGround ? 0.28 : 1;
+      p.vx += dir * (p.onGround ? 1900 : 1400) * (turning ? 2 : 1) * iceK * dt;
       p.facing = dir;
     } else {
-      const fr = (p.onGround ? 2400 : 700) * dt;
+      const fr = (p.onGround ? (th.ice ? 380 : 2400) : 700) * dt;
       p.vx = Math.abs(p.vx) <= fr ? 0 : p.vx - Math.sign(p.vx) * fr;
     }
     p.vx = clamp(p.vx, -maxv, maxv);
@@ -276,6 +286,16 @@
       p.sx = 0.8; p.sy = 1.2;
       Sound.play('jump');
       dust(p.x, p.y, 4);
+    }
+    // під водою можна «пливти»: стрибок у повітрі — гребок угору
+    p.swimCD = (p.swimCD || 0) - dt;
+    if (th.swim && p.jbuf > 0 && !p.onGround && p.coyote <= 0 && p.swimCD <= 0 && !G.win && p.y - p.h > -T) {
+      p.vy = Math.min(p.vy, -430 * Math.sqrt(th.gravity));
+      p.jbuf = 0;
+      p.swimCD = 0.22;
+      p.sx = 0.85; p.sy = 1.15;
+      Sound.play('swim');
+      for (let i = 0; i < 4; i++) part({ x: p.x + (Math.random() - 0.5) * 16, y: p.y - 6, vx: (Math.random() - 0.5) * 40, vy: 40 + Math.random() * 40, life: 0.6, max: 0.6, size: 2.5, color: 'rgba(255,255,255,0.75)' });
     }
     // радісні підстрибування після фінішу
     if (G.win > 0.6 && p.onGround && Math.random() < dt * 2) p.vy = -420 * Math.sqrt(th.gravity);
@@ -312,6 +332,24 @@
     p.sx += (1 - p.sx) * Math.min(1, dt * 12);
     p.sy += (1 - p.sy) * Math.min(1, dt * 12);
     if (bonk) hitTile(bonk.tx, bonk.ty);
+    // батут (11) і конвеєри (9 — вліво, 10 — вправо)
+    if (p.onGround && !p.onMover) {
+      const ty = Math.floor(p.y / T + 0.01);
+      let bounceT = -1, belt = 0;
+      for (let tx = Math.floor((p.x - p.w / 2 + 0.5) / T); tx <= Math.floor((p.x + p.w / 2 - 0.5) / T); tx++) {
+        const t = tile(tx, ty);
+        if (t === 11) bounceT = tx;
+        else if (t === 9) belt = -1;
+        else if (t === 10) belt = 1;
+      }
+      if (bounceT >= 0) {
+        p.vy = -980 * Math.sqrt(th.gravity) * (th.jumpBoost || 1);
+        p.onGround = false;
+        p.sx = 0.7; p.sy = 1.35;
+        G.bumps.push({ tx: bounceT, ty, t: 0.18 });
+        Sound.play('spring');
+      } else if (belt) moveX(p, belt * 70 * dt);
+    }
 
     if (p.y > ROWS * T + 90) { fellInPit(); return; }
 
@@ -435,7 +473,24 @@
     for (const e of lv.enemies) {
       if (e.dead) { e.dead += dt; continue; }
       if (Math.abs(e.x - cx) > VW) continue; // далеко за екраном — чекає
-      if (e.type === 'walker') {
+      if (e.type === 'shooter') {
+        e.dir = p.x < e.x ? -1 : 1;
+        e.t = (e.t || 0) + dt;
+        if (e.t >= (e.rate || 3)) {
+          e.t = 0;
+          if (Math.abs(e.x - cx) < VW * 0.55) {
+            const sp = e.pspeed || (120 + Math.min(60, Math.max(0, G.L - 40) * 1.5));
+            G.shots.push({ x: e.x + 16 * e.dir, y: e.y - 14, vx: e.dir * sp, life: 6 });
+            Sound.play('shoot');
+          }
+        }
+      } else if (e.type === 'walker') {
+        if (e.charge) {
+          e.base = e.base || Math.abs(e.vx);
+          const ahead = (p.x - e.x) * Math.sign(e.vx);
+          e.charging = ahead > 0 && ahead < 5 * T && Math.abs(p.y - e.y) < T;
+          e.vx = Math.sign(e.vx) * e.base * (e.charging ? 2.2 : 1);
+        }
         e.vy = Math.min(e.vy + g * dt, MAXFALL);
         const prevBot = e.y;
         if (moveX(e, e.vx * dt)) e.vx = -e.vx;
@@ -460,8 +515,8 @@
         e.y = e.baseY + Math.sin(e.t * 2) * e.range * 0.5;
       }
       // зіткнення з міньйоном
-      const top = e.type === 'walker' ? e.y - e.h : e.y - e.h / 2;
-      const bot = e.type === 'walker' ? e.y : e.y + e.h / 2;
+      const top = e.type !== 'flyer' ? e.y - e.h : e.y - e.h / 2;
+      const bot = e.type !== 'flyer' ? e.y : e.y + e.h / 2;
       const ex0 = e.x - e.w / 2 + 3, ex1 = e.x + e.w / 2 - 3;
       if (p.x + p.w / 2 > ex0 && p.x - p.w / 2 < ex1 && p.y > top + 3 && p.y - p.h < bot - 3) {
         if (p.vy > 30 && p.y <= top + Math.max(14, e.h * 0.6)) {
@@ -478,33 +533,212 @@
     lv.enemies = lv.enemies.filter(e => !e.dead || e.dead < 0.6);
   }
 
-  function updateComp(dt) {
-    const c = G.comp, p = G.p, tr = G.trail;
-    let dist = 0, prev = { x: p.x, y: p.y }, tx = tr[0].x, ty = tr[0].y;
+  // точка на сліді міньйона, де має бігти білочка
+  function trailTarget() {
+    const p = G.p, tr = G.trail;
+    let dist = 0, prev = { x: p.x, y: p.y };
     for (let i = tr.length - 1; i >= 0; i--) {
       const q = tr[i];
       const d = Math.hypot(q.x - prev.x, q.y - prev.y);
       if (dist + d >= FOLLOW) {
         const k = d > 0 ? (FOLLOW - dist) / d : 0;
-        tx = prev.x + (q.x - prev.x) * k;
-        ty = prev.y + (q.y - prev.y) * k;
-        break;
+        return { x: prev.x + (q.x - prev.x) * k, y: prev.y + (q.y - prev.y) * k };
       }
       dist += d;
       prev = q;
     }
+    return { x: tr[0].x, y: tr[0].y };
+  }
+
+  function updateComp(dt) {
+    const c = G.comp, p = G.p;
     const ox = c.x;
-    c.x += (tx - c.x) * Math.min(1, dt * 12);
-    c.y += (ty - c.y) * Math.min(1, dt * 12);
+    c.acornCD -= dt;
+    c.fetchCD -= dt;
+    c.throwT = Math.max(0, c.throwT - dt);
+    if (c.mode === 'gate') updateCompGate(dt);
+    else if (c.mode === 'fetch') {
+      // стрибок за бананом по дузі
+      const f = c.fetch;
+      f.t += dt;
+      const u = Math.min(1, f.t / f.dur);
+      c.x = f.x0 + (f.b.x - f.x0) * u;
+      c.y = f.y0 + (f.b.y + 12 - f.y0) * u - Math.sin(Math.PI * u) * 36;
+      if (u >= 1) {
+        if (!f.b.got) {
+          f.b.got = true;
+          G.bananas++;
+          Sound.play('banana');
+          sparkle(f.b.x, f.b.y, '#ffe135', 6);
+        }
+        c.mode = 'follow';
+      }
+    } else {
+      const tg = trailTarget();
+      c.x += (tg.x - c.x) * Math.min(1, dt * 12);
+      c.y += (tg.y - c.y) * Math.min(1, dt * 12);
+      if (!G.win) { tryAcorn(); tryFetch(); }
+    }
     const dx = c.x - ox;
     c.moving = Math.abs(dx) > 0.12;
-    if (Math.abs(dx) > 0.05) c.facing = dx > 0 ? 1 : -1;
-    else if (p.idle > 0.3) c.facing = p.x >= c.x ? 1 : -1;
+    if (c.mode !== 'gate') {
+      if (Math.abs(dx) > 0.05) c.facing = dx > 0 ? 1 : -1;
+      else if (p.idle > 0.3) c.facing = p.x >= c.x ? 1 : -1;
+    }
     c.t += dt;
     c.blinkT -= dt;
     if (c.blinkT < -0.12) c.blinkT = 2 + Math.random() * 4;
     // коли міньйон стоїть — білка весело підстрибує
-    if (p.idle > 1.5) c.hop += dt; else c.hop = 0;
+    if ((p.idle > 1.5 && c.mode === 'follow') || (c.mode === 'gate' && c.phase === 'wait')) c.hop += dt; else c.hop = 0;
+  }
+
+  // білочка кидає жолудь у ворога попереду
+  function tryAcorn() {
+    const c = G.comp, p = G.p;
+    if (c.acornCD > 0) return;
+    let best = null, bd = 1e9, by = 0;
+    for (const e of G.lv.enemies) {
+      if (e.dead) continue;
+      const dx = e.x - p.x;
+      if (Math.sign(dx) !== p.facing || Math.abs(dx) > 250 || Math.abs(dx) < 16) continue;
+      const ey = e.type === 'flyer' ? e.y : e.y - e.h / 2;
+      if (Math.abs(ey - (p.y - 20)) > 140) continue;
+      const d = Math.hypot(e.x - c.x, ey - c.y);
+      if (d < bd) { bd = d; best = e; by = ey; }
+    }
+    if (!best) return;
+    const AG = 900, tt = clamp(bd / 380, 0.3, 0.75);
+    const sx = c.x, sy = c.y - 18;
+    const tx = best.x + (best.type === 'walker' ? best.vx * tt : 0);
+    G.acorns.push({ x: sx, y: sy, vx: (tx - sx) / tt, vy: (by - sy - 0.5 * AG * tt * tt) / tt, g: AG, life: 2, rot: 0 });
+    c.acornCD = G.L >= 60 ? 7 : 6;
+    c.throwT = 0.3;
+    c.facing = tx >= c.x ? 1 : -1;
+    Sound.play('throw');
+  }
+
+  function updateAcorns(dt) {
+    for (const a of G.acorns) {
+      a.life -= dt;
+      a.vy += a.g * dt;
+      a.x += a.vx * dt;
+      a.y += a.vy * dt;
+      a.rot += dt * 14;
+      for (const e of G.lv.enemies) {
+        if (e.dead) continue;
+        const ey = e.type === 'flyer' ? e.y : e.y - e.h / 2;
+        if (Math.abs(e.x - a.x) < e.w / 2 + 7 && Math.abs(ey - a.y) < e.h / 2 + 7) {
+          e.dead = 0.001;
+          a.life = 0;
+          Sound.play('stomp');
+          sparkle(e.x, ey, '#ffd23f', 10);
+          break;
+        }
+      }
+      if (a.y > ROWS * T + 50) a.life = 0;
+      else if (a.life > 0 && solid(tile(Math.floor(a.x / T), Math.floor(a.y / T)))) { a.life = 0; dust(a.x, a.y, 3); }
+    }
+    G.acorns = G.acorns.filter(a => a.life > 0);
+  }
+
+  // білочка підстрибує за бананом, який міньйон проминув
+  function tryFetch() {
+    const c = G.comp, p = G.p;
+    if (c.fetchCD > 0 || Math.abs(c.x - p.x) > 120) return;
+    for (const b of G.lv.bananas) {
+      if (b.got) continue;
+      const dx = b.x - c.x, dy = b.y - (c.y - 12);
+      if (Math.abs(dx) > 110 || dy < -110 || dy > 40) continue;
+      if ((b.x - p.x) * p.facing > 30) continue; // лише ті, що вже позаду або поруч
+      c.mode = 'fetch';
+      c.fetch = { b, x0: c.x, y0: c.y, t: 0, dur: 0.35 + Math.abs(dx) / 600 };
+      c.fetchCD = 1.6;
+      return;
+    }
+  }
+
+  // ворота: білочка пробігає тунелем і тисне кнопку
+  function updateGates(dt) {
+    const p = G.p, c = G.comp, lv = G.lv;
+    for (const g of lv.gates) {
+      if (g.state === 'closed' && c.mode !== 'gate' && !G.win && p.x > g.tx * T - 6 * T && p.x < g.tx * T + T) {
+        g.state = 'squirrel';
+        c.mode = 'gate';
+        c.gate = g;
+        c.phase = 'run';
+        c.pt = 0;
+        G.toast = { text: 'Білочка відкриє ворота! 🐿️', t: 2.2 };
+      }
+      if (g.state === 'opening') {
+        g.open = Math.min(1, g.open + dt * 1.1);
+        if (g.open >= 1) {
+          for (let r = 0; r < g.gy; r++) if (lv.grid[r][g.tx] === 8) lv.grid[r][g.tx] = 0;
+          g.state = 'open';
+        }
+      }
+    }
+  }
+
+  function updateCompGate(dt) {
+    const c = G.comp, g = c.gate, p = G.p;
+    const gyPx = g.gy * T, tunY = gyPx + 44;
+    const runTo = (tx, speed) => {
+      const d = tx - c.x;
+      c.x += Math.sign(d) * Math.min(Math.abs(d), speed * dt);
+      if (Math.abs(d) > 0.5) c.facing = d > 0 ? 1 : -1;
+      return Math.abs(d) < 1;
+    };
+    c.pt += dt;
+    switch (c.phase) {
+      case 'run':
+        c.y += (gyPx - c.y) * Math.min(1, dt * 10);
+        if (runTo(g.ex, 260)) { c.phase = 'dive'; c.pt = 0; c.y = gyPx; Sound.play('dig'); dust(g.ex, gyPx, 6); }
+        break;
+      case 'dive':
+        c.y = gyPx + Math.min(1, c.pt / 0.3) * 34;
+        if (c.pt > 0.3) { c.phase = 'tunnel'; c.pt = 0; }
+        break;
+      case 'tunnel':
+        c.y = tunY;
+        if (runTo(g.xx, 200)) { c.phase = 'emerge'; c.pt = 0; Sound.play('dig'); dust(g.xx, gyPx, 6); }
+        for (const b of g.bananas || []) {
+          if (!b.got && Math.abs(b.x - c.x) < 14) { b.got = true; G.bananas++; Sound.play('banana'); }
+        }
+        break;
+      case 'emerge':
+        c.y = gyPx + 34 - Math.min(1, c.pt / 0.3) * 34;
+        if (c.pt > 0.3) { c.phase = 'toButton'; c.pt = 0; c.y = gyPx; }
+        break;
+      case 'toButton':
+        if (runTo(g.bx - 12, 220)) { c.phase = 'press'; c.pt = 0; }
+        break;
+      case 'press':
+        if (c.pt > 0.25 && !g.pressed) {
+          g.pressed = true;
+          g.state = 'opening';
+          G.shake = 0.5;
+          Sound.play('gate');
+          sparkle(g.bx, gyPx - 12, '#69f0ae', 12);
+          G.toast = { text: 'Молодець, білочко! 🌰', t: 1.6 };
+        }
+        if (c.pt > 0.7) c.phase = 'wait';
+        break;
+      default: // wait — чекає міньйона біля кнопки
+        c.facing = p.x < c.x ? -1 : 1;
+        if (g.state === 'open' && p.x > g.tx * T + T) { c.mode = 'follow'; c.gate = null; }
+    }
+  }
+
+  // кульки, якими стріляють вороги-стрільці
+  function updateShots(dt) {
+    const p = G.p;
+    for (const s of G.shots) {
+      s.life -= dt;
+      s.x += s.vx * dt;
+      if (solid(tile(Math.floor(s.x / T), Math.floor(s.y / T)))) { s.life = 0; dust(s.x, s.y, 3); continue; }
+      if (Math.abs(s.x - p.x) < p.w / 2 + 5 && s.y > p.y - p.h - 4 && s.y < p.y + 4) { s.life = 0; hurt(s.x); }
+    }
+    G.shots = G.shots.filter(s => s.life > 0);
   }
 
   function hurt(fromX) {
@@ -597,8 +831,35 @@
           img = tl.crumble;
           const cr = G.crumbles.get(tx + ',' + ty);
           if (cr && !cr.gone) { ox = (Math.random() - 0.5) * 3; oy = (Math.random() - 0.5) * 2; }
-        } else img = t === 2 ? tl.block : t === 3 ? tl.box : t === 4 ? tl.used : tl.oneway;
-        if (t >= 2 && t <= 4) for (const b of G.bumps) if (b.tx === tx && b.ty === ty) oy = -Math.sin((1 - b.t / 0.18) * Math.PI) * 8;
+        } else if (t === 8) {
+          const g = G.gateCol.get(tx);
+          if (g) {
+            // ворота опускаються під землю
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(tx * T - 1, -T, T + 2, g.gy * T + T);
+            ctx.clip();
+            ctx.drawImage(ty === g.gy - 1 ? tl.gateSign : tl.gate, tx * T, ty * T + g.open * g.gy * T, T + 0.6, T + 0.6);
+            ctx.restore();
+          } else ctx.drawImage(tl.gate, tx * T, ty * T, T + 0.6, T + 0.6);
+          continue;
+        } else if (t === 9 || t === 10) {
+          ctx.drawImage(tl.belt, tx * T, ty * T, T + 0.6, T + 0.6);
+          const d = t === 9 ? -1 : 1, off = ((G.t * 70 * d) % 12 + 12) % 12;
+          ctx.fillStyle = '#ffca28';
+          for (let k = -12; k < T + 12; k += 12) {
+            const ax = tx * T + k + off;
+            if (ax < tx * T - 2 || ax > tx * T + T - 6) continue;
+            ctx.beginPath();
+            ctx.moveTo(ax + (d > 0 ? 0 : 6), ty * T + 1.5);
+            ctx.lineTo(ax + (d > 0 ? 6 : 0), ty * T + 4);
+            ctx.lineTo(ax + (d > 0 ? 0 : 6), ty * T + 6.5);
+            ctx.fill();
+          }
+          continue;
+        } else if (t === 11) img = tl.bounce;
+        else img = t === 2 ? tl.block : t === 3 ? tl.box : t === 4 ? tl.used : tl.oneway;
+        if ((t >= 2 && t <= 4) || t === 11) for (const b of G.bumps) if (b.tx === tx && b.ty === ty) oy = (t === 11 ? 1 : -1) * Math.sin((1 - b.t / 0.18) * Math.PI) * (t === 11 ? 5 : 8);
         ctx.drawImage(img, tx * T + ox, ty * T + oy, T + 0.6, T + 0.6);
       }
     }
@@ -650,6 +911,15 @@
     for (const k of lv.checkpoints) if (vis(k.x)) Art.checkpoint(ctx, k.x, k.y, k.active, t);
     if (vis(lv.goal.x)) Art.goal(ctx, lv.goal.x, lv.goal.y, t);
     drawTiles(cam);
+    for (const g of lv.gates) {
+      if (!vis(g.ex) && !vis(g.bx)) continue;
+      const gy = g.gy * T;
+      Art.tunnel(ctx, g.ex, g.xx, gy + 36);
+      for (const b of g.bananas || []) if (!b.got) Art.banana(ctx, b.x, b.y, t + b.x * 0.01, 0.8);
+      Art.burrow(ctx, g.ex, gy);
+      Art.burrow(ctx, g.xx, gy);
+      Art.button(ctx, g.bx, gy, g.pressed);
+    }
     for (const m of lv.movers) {
       if (!vis(m.x) && !vis(m.x + m.w)) continue;
       if (m.axis === 'y') {
@@ -665,10 +935,29 @@
     for (const b of lv.bananas) if (!b.got && vis(b.x)) Art.banana(ctx, b.x, b.y, t + b.x * 0.01);
     for (const h of lv.hearts) if (!h.got && vis(h.x)) Art.heart(ctx, h.x, h.y + Math.sin(t * 3) * 2, 1.1 + Math.sin(t * 6) * 0.06);
     for (const e of lv.enemies) if (vis(e.x)) Art.enemy(ctx, e, t, th.enemyColor);
+    for (const s2 of G.shots) Art.projectile(ctx, s2.x, s2.y, th.projectile || '#ff7043', t);
+    for (const a of G.acorns) Art.acorn(ctx, a.x, a.y, a.rot, 1.1);
 
     // білка біжить позаду
     const hop = c.hop > 0 ? Math.abs(Math.sin(c.hop * 5)) * 8 : 0;
-    Art.squirrel(ctx, c.x, c.y - hop, { t: c.t, facing: c.facing, moving: c.moving || hop > 0, blink: c.blinkT < 0 });
+    const sq = { t: c.t, facing: c.facing, moving: c.moving || hop > 0, blink: c.blinkT < 0 };
+    if (c.mode === 'gate' && (c.phase === 'dive' || c.phase === 'emerge')) {
+      // пірнає в нірку: малюємо лише те, що над землею
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(c.x - 40, 0, 80, c.gate.gy * T);
+      ctx.clip();
+      Art.squirrel(ctx, c.x, c.y, sq);
+      ctx.restore();
+    } else if (c.mode === 'gate' && c.phase === 'tunnel') {
+      ctx.save();
+      ctx.translate(c.x, c.y);
+      ctx.scale(0.62, 0.62);
+      Art.squirrel(ctx, 0, 0, sq);
+      ctx.restore();
+    } else {
+      Art.squirrel(ctx, c.x, c.y - hop - (c.throwT > 0 ? 4 : 0), sq);
+    }
     // міньйон
     const flash = p.inv > 0 && Math.floor(p.inv * 12) % 2 === 0;
     const state = !p.onGround ? 'air' : (Math.abs(p.vx) > 20 ? 'run' : 'idle');
@@ -752,6 +1041,19 @@
     const slots = Math.max(3, G.hearts);
     for (let i = 0; i < slots; i++) Art.heart(ctx, 30 + i * 32, 30, 1.25, i < G.hearts ? '#ff3b5c' : 'rgba(0,0,0,0.3)');
     if (G.hearts > 0) for (let i = 0; i < G.hearts; i++) { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ell(ctx, 30 + i * 32 - 6, 25, 3, 2, -0.6); }
+    // жолудь білочки: світиться, коли готова кинути
+    {
+      const ax = 30 + slots * 32 + 12, ready = G.comp.acornCD <= 0;
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      circ(ctx, ax, 30, 14);
+      const k = ready ? 1 : clamp(1 - G.comp.acornCD / (G.L >= 60 ? 7 : 6), 0, 1);
+      ctx.strokeStyle = ready ? '#ffd23f' : 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(ax, 30, 14, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = ready ? 1 : 0.45;
+      Art.acorn(ctx, ax, 29, 0, 1.4);
+      ctx.globalAlpha = 1;
+    }
     const bx = VW - 220;
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     rr(ctx, bx - 26, 12, 140, 36, 18);
@@ -1104,6 +1406,8 @@
   });
   on('btnHowInstall', showInstall);
 
+  $('subTitle').textContent = `Бананова пригода у ${NUM} світах`;
+  $('finalText').innerHTML = `Міньйон і Руда Білка пройшли всі ${NUM} світів!<br>Ти справжній герой!`;
   resize();
   updateSoundButtons();
   setState('menu');

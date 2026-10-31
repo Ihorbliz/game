@@ -252,18 +252,34 @@ const Art = {
     c.save();
     c.translate(e.x, e.y);
     const f = e.vx > 0 ? 1 : -1;
-    if (e.type === 'flyer') c.scale(e.face || 1, 1); else c.scale(f, 1);
+    if (e.type === 'flyer') c.scale(e.face || 1, 1);
+    else if (e.type === 'shooter') c.scale(e.dir || -1, 1);
+    else c.scale(f, 1);
     if (e.dead) {
       c.globalAlpha = Math.max(0, 1 - e.dead * 1.8);
       if (e.type === 'flyer') c.rotate(e.dead * 8);
       else c.scale(1.2, 0.35);
     }
-    const fn = Art.enemies[e.style] || Art.enemies.beetle;
+    const fn = Art.enemies[e.style] || (e.type === 'shooter' ? Art.enemies.turret : Art.enemies.beetle);
     fn(c, t + (e.seed || 0), col);
     c.restore();
   },
 
   enemies: {
+    // стрілець за замовчуванням: мила гармата з очима, дуло праворуч
+    turret(c, t, col) {
+      const k = Math.max(0, Math.sin(t * 3)) * 1.5;
+      c.fillStyle = '#5d4037';
+      rr(c, -13, -8, 26, 8, 3); c.fill();
+      c.fillStyle = col || '#78909c';
+      circ(c, -2, -16, 11);
+      c.fillStyle = Art.shade(col && col.length === 7 ? col : '#78909c', -30);
+      rr(c, 4, -20 - k * 0.3, 14 + k, 9, 3); c.fill();
+      c.fillStyle = '#263238'; ell(c, 18 + k, -15.5, 2, 3.5);
+      c.fillStyle = '#fff'; circ(c, -1, -19, 3.4);
+      c.fillStyle = '#111'; circ(c, 0, -19, 1.7);
+      c.strokeStyle = '#111'; c.lineWidth = 1.4; line(c, -4, -24, 2, -23);
+    },
     beetle(c, t, col) {
       c.strokeStyle = '#222';
       c.lineWidth = 2;
@@ -538,6 +554,75 @@ const Art = {
     const g = Math.max(0, Math.min(255, ((n >> 8) & 255) + amt));
     const b = Math.max(0, Math.min(255, (n & 255) + amt));
     return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  },
+
+  // ---------------- Білочка: жолудь, нірка, тунель, кнопка ----------------
+  acorn(c, x, y, rot = 0, s = 1) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(rot);
+    c.scale(s, s);
+    c.fillStyle = '#b5651d';
+    ell(c, 0, 2, 5, 6);
+    c.fillStyle = 'rgba(255,255,255,0.35)';
+    ell(c, -1.8, 1, 1.4, 2.6);
+    c.fillStyle = '#6d4c41';
+    c.beginPath(); c.ellipse(0, -2, 6, 3.6, 0, Math.PI, 0); c.fill();
+    c.fillRect(-6, -2.2, 12, 1.8);
+    c.strokeStyle = '#4e342e'; c.lineWidth = 1.6;
+    line(c, 0, -5, 1.5, -8);
+    c.restore();
+  },
+
+  burrow(c, x, y) {
+    c.fillStyle = '#5d4037';
+    ell(c, x, y - 1, 14, 5);
+    c.fillStyle = '#1b0f0a';
+    ell(c, x, y, 10, 3.5);
+    c.fillStyle = '#795548';
+    circ(c, x - 13, y - 2, 2.2); circ(c, x + 12, y - 1.5, 2.6); circ(c, x + 6, y - 4, 1.6);
+  },
+
+  tunnel(c, x0, x1, y) {
+    // підземний хід білочки (видно крізь землю)
+    c.save();
+    c.globalAlpha = 0.85;
+    c.strokeStyle = '#2b1810';
+    c.lineCap = 'round';
+    c.lineWidth = 16;
+    c.beginPath();
+    c.moveTo(x0, y - 36);
+    c.quadraticCurveTo(x0, y, x0 + 18, y);
+    c.lineTo(x1 - 18, y);
+    c.quadraticCurveTo(x1, y, x1, y - 36);
+    c.stroke();
+    c.globalAlpha = 0.5;
+    c.strokeStyle = '#4e342e';
+    c.lineWidth = 3;
+    c.setLineDash([3, 7]);
+    c.beginPath(); c.moveTo(x0 + 16, y + 6); c.lineTo(x1 - 16, y + 6); c.stroke();
+    c.setLineDash([]);
+    c.restore();
+  },
+
+  button(c, x, y, pressed) {
+    c.fillStyle = '#607d8b';
+    rr(c, x - 12, y - 6, 24, 6, 2); c.fill();
+    const h = pressed ? 2 : 7;
+    c.fillStyle = pressed ? '#2e7d32' : '#e53935';
+    rr(c, x - 9, y - 6 - h, 18, h + 1, 4); c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.5)';
+    c.fillRect(x - 6, y - 5 - h, 8, 1.6);
+  },
+
+  projectile(c, x, y, col, t) {
+    c.save();
+    c.shadowColor = col; c.shadowBlur = 8;
+    c.fillStyle = col;
+    circ(c, x, y, 6 + Math.sin(t * 20) * 0.6);
+    c.restore();
+    c.fillStyle = 'rgba(255,255,255,0.7)';
+    circ(c, x - 2, y - 2, 2);
   },
 
   // ---------------- Предмети ----------------
@@ -1055,6 +1140,53 @@ const Art = {
         c.stroke();
         c.fillStyle = 'rgba(0,0,0,0.18)';
         c.fillRect(2, T - 6, T - 4, 3);
+      }),
+      gate: mk(c => {
+        // ворота, які відчиняє білочка: дерев'яні дошки з металевими смугами
+        c.fillStyle = '#6d4c41';
+        c.fillRect(0, 0, T, T);
+        c.fillStyle = '#8d6e63';
+        for (let i = 0; i < 3; i++) c.fillRect(2 + i * 10, 0, 8, T);
+        c.fillStyle = '#5d4037';
+        c.fillRect(0, 0, 2, T); c.fillRect(T - 2, 0, 2, T);
+        c.fillStyle = '#90a4ae';
+        c.fillRect(0, 12, T, 4);
+        c.fillStyle = '#546e7a';
+        circ(c, 5, 14, 1.3); circ(c, 16, 14, 1.3); circ(c, 27, 14, 1.3);
+      }),
+      gateSign: mk(c => {
+        // нижня дошка воріт зі знаком білочки
+        c.fillStyle = '#6d4c41'; c.fillRect(0, 0, T, T);
+        c.fillStyle = '#8d6e63';
+        for (let i = 0; i < 3; i++) c.fillRect(2 + i * 10, 0, 8, T);
+        c.fillStyle = '#fff3e0'; circ(c, 16, 15, 10);
+        c.strokeStyle = '#e2771f'; c.lineWidth = 2; c.beginPath(); c.arc(16, 15, 10, 0, Math.PI * 2); c.stroke();
+        Art.acorn(c, 16, 16, 0, 1.1);
+      }),
+      belt: mk(c => {
+        c.fillStyle = '#37474f';
+        rr(c, 0, 1, T, T - 2, 6); c.fill();
+        c.fillStyle = '#263238';
+        c.fillRect(0, 8, T, T - 12);
+        c.fillStyle = '#90a4ae';
+        circ(c, 8, 18, 5); circ(c, 24, 18, 5);
+        c.fillStyle = '#546e7a';
+        circ(c, 8, 18, 2); circ(c, 24, 18, 2);
+        c.fillStyle = '#455a64';
+        c.fillRect(0, 1, T, 6);
+      }),
+      bounce: mk(c => {
+        const bc = th.bounce || { fill: '#ff6fb5', dark: '#c2407e', light: '#ffc1df' };
+        c.fillStyle = bc.dark;
+        rr(c, 0, 2, T, T - 2, 8); c.fill();
+        c.fillStyle = bc.fill;
+        rr(c, 1, 2, T - 2, T - 7, 8); c.fill();
+        c.fillStyle = bc.light || 'rgba(255,255,255,0.6)';
+        ell(c, 10, 9, 6, 3, -0.2);
+        c.fillStyle = 'rgba(255,255,255,0.85)';
+        // стрілочки «вгору»
+        tri(c, 16, 12, 11, 19, 21, 19);
+        tri(c, 16, 18, 11, 25, 21, 25);
       }),
       oneway: mk(c => {
         const o = th.oneway;
